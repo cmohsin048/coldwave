@@ -1,0 +1,38 @@
+# Local infra for ColdWave development.
+#   docker compose up -d
+# Then set DATABASE_URL, REDIS_URL, and SPAMASSASSIN_* in .env to match.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: coldwave
+      POSTGRES_PASSWORD: coldwave
+      POSTGRES_DB: coldwave
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coldwave"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+
+  # SpamAssassin daemon (spamd) exposed on 783 for the pre-send spam engine.
+  spamassassin:
+    image: instantlinux/spamassassin:latest
+    ports:
+      - "783:783"
+    command: ["spamd", "--allowed-ips=0.0.0.0/0", "--listen=0.0.0.0:783", "--nouser-config"]
+
+volumes:
+  pgdata:
+  redisdata:
