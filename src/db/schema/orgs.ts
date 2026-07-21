@@ -20,9 +20,6 @@ export const organizations = pgTable("organization", {
   slug: text("slug").notNull().unique(),
   // CAN-SPAM physical postal address included in every campaign footer.
   companyAddress: text("company_address"),
-  // Stripe customer/subscription for metered billing.
-  stripeCustomerId: text("stripe_customer_id"),
-  stripeSubscriptionId: text("stripe_subscription_id"),
   ...timestamps,
 });
 

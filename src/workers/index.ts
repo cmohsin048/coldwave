@@ -13,7 +13,6 @@ import { tickDueEnrollments, processEnrollmentStep } from "@/modules/campaigns/s
 import { runWarmupTick } from "@/modules/warmup/engine";
 import { syncReplies, runWarmupInboxBots } from "@/modules/warmup/imap";
 import { refreshAllDomainHealth } from "@/modules/spam/domain-refresh";
-import { reportUsageToStripe } from "@/modules/billing/stripe";
 import { logger } from "@/lib/logger";
 
 const connection = createRedisConnection();
@@ -73,17 +72,6 @@ function startWorkers() {
       async () => {
         const n = await refreshAllDomainHealth();
         logger.info("domain health refresh", { domains: n });
-      },
-      { connection }
-    )
-  );
-
-  workers.push(
-    new Worker(
-      QUEUE_NAMES.billingSync,
-      async () => {
-        const res = await reportUsageToStripe();
-        logger.info("billing sync", res);
       },
       { connection }
     )

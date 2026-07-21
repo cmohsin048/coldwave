@@ -20,7 +20,6 @@ import { isSuppressed, addSuppression } from "./suppression";
 import { sendViaMailbox } from "./transport";
 import { consumeRateLimit } from "./rate-limiter";
 import { injectTracking } from "./tracking";
-import { recordUsage } from "@/modules/billing/usage";
 import {
   bumpVariantCounter,
   maybeSelectWinner,
@@ -174,11 +173,6 @@ export async function sendSequenceStep(
       .where(eq(leads.id, args.leadId));
 
     await consumeRateLimit(args.mailbox.id);
-    await recordUsage({
-      orgId: args.orgId,
-      metric: "email_sent",
-      reference: message!.id,
-    });
 
     // A/B accounting: count the send, then see if the test can be decided.
     if (args.variantId) {

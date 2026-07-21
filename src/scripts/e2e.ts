@@ -10,7 +10,6 @@ import {
   sequenceSteps,
   campaignEnrollments,
   messages,
-  usageRecords,
 } from "@/db/schema";
 
 // --- modules under test ---
@@ -37,7 +36,6 @@ import {
 import { sealSecrets, openSecrets } from "@/modules/mailboxes/credentials";
 import { findExistingEmails } from "@/modules/leads/queries";
 import { addSuppression, isSuppressed } from "@/modules/sending/suppression";
-import { recordUsage } from "@/modules/billing/usage";
 import { registerAction } from "@/app/(auth)/actions";
 import { getRedis } from "@/lib/redis";
 
@@ -323,12 +321,6 @@ async function main() {
         .values({ orgId, campaignId: camp!.id, leadId: lead!.id, status: "active", currentStepId: step!.id })
         .returning();
       ok("lead enrolled in campaign", enr?.status === "active");
-
-      await recordUsage({ orgId, metric: "email_sent", quantity: 5 });
-      const usage = await db.query.usageRecords.findFirst({
-        where: and(eq(usageRecords.orgId, orgId), eq(usageRecords.metric, "email_sent")),
-      });
-      ok("usage recorded for billing", usage?.quantity === 5);
     }
   }
 

@@ -21,7 +21,7 @@ built with Next.js 15.
 - **BullMQ** + **Redis** for queues / cron
 - **NextAuth (Auth.js)** credentials auth, multi-tenant, org-scoped rows
 - **Zod** validation, **AES-256-GCM** encryption for mailbox credentials
-- **Apollo.io** (leads), **OpenAI** (AI designer), **Stripe** (metered billing)
+- **Apollo.io** (leads), **OpenAI** (AI designer)
 
 ## Modules
 
@@ -37,7 +37,6 @@ built with Next.js 15.
 | Auto warmup (peer-to-peer, IMAP bots, ramp) | `src/modules/warmup`, `/warmup` |
 | Reply detection + unified inbox (AI replies) | `src/modules/warmup/imap.ts`, `/inbox` |
 | Analytics (Recharts) | `src/modules/analytics`, `/analytics` |
-| Billing (Stripe metered) | `src/modules/billing` |
 | Queues / cron | `src/queues`, `src/workers` |
 
 ## Getting started
@@ -86,7 +85,7 @@ npm run db:seed     # optional: demo login  (demo@coldwave.test / password123)
 
 ```bash
 npm run dev         # Next.js app on http://localhost:3000
-npm run worker      # BullMQ workers (campaign ticks, warmup, reply sync, billing)
+npm run worker      # BullMQ workers (campaign ticks, warmup, reply sync)
 ```
 
 The **worker process is required** for campaigns to actually send, for warmup to
@@ -103,7 +102,7 @@ run, and for reply detection. Keep it running alongside the app.
    - renders spintax + merge fields per recipient,
    - appends the CAN-SPAM footer + RFC 8058 `List-Unsubscribe` headers,
    - runs the **pre-send spam check** (blocks if score ≥ threshold),
-   - sends, injects open/click tracking, records the message + usage,
+   - sends, injects open/click tracking, records the message,
    - waits a randomized 30–180s, then advances the enrollment.
 6. Replies are detected over IMAP, pausing the lead's sequence; drafts are
    suggested in the **/inbox**.
@@ -131,8 +130,6 @@ run, and for reply detection. Keep it running alongside the app.
 - Run `npm run db:generate` to produce SQL migrations, then `npm run db:migrate`.
 - Deploy the app (Vercel/Node) and run `npm run worker` as a long-lived process
   (a container / VM / Railway service) — it can't run on serverless.
-- Configure a Stripe meter named `email_sent` and `lead_enriched`, plus the
-  webhook at `/api/webhooks/stripe`.
 - SpamAssassin runs as a sidecar; if it's unreachable the engine degrades to
   heuristic + DNS checks only.
 docker compose up -d

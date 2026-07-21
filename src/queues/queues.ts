@@ -13,7 +13,6 @@ export const QUEUE_NAMES = {
   warmupTick: "warmup-tick", // repeatable: run warmup rounds
   replySync: "reply-sync", // repeatable: IMAP reply detection
   domainHealth: "domain-health", // repeatable: refresh SPF/DKIM/DMARC/blacklist
-  billingSync: "billing-sync", // repeatable: report usage to Stripe
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -37,7 +36,6 @@ export const sendStepQueue = makeQueue(QUEUE_NAMES.sendStep);
 export const warmupTickQueue = makeQueue(QUEUE_NAMES.warmupTick);
 export const replySyncQueue = makeQueue(QUEUE_NAMES.replySync);
 export const domainHealthQueue = makeQueue(QUEUE_NAMES.domainHealth);
-export const billingSyncQueue = makeQueue(QUEUE_NAMES.billingSync);
 
 export interface SendStepJob {
   enrollmentId: string;
@@ -76,10 +74,5 @@ export async function installRepeatableJobs() {
     "refresh",
     {},
     { repeat: { every: 6 * 60 * 60_000 }, jobId: "domain-health" } // every 6h
-  );
-  await billingSyncQueue.add(
-    "sync",
-    {},
-    { repeat: { pattern: "0 * * * *" }, jobId: "billing-sync" } // hourly
   );
 }

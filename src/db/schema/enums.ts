@@ -123,8 +123,3 @@ export const suppressionReason = pgEnum("suppression_reason", [
   "manual",
   "already_contacted",
 ]);
-
-export const usageMetric = pgEnum("usage_metric", [
-  "email_sent",
-  "lead_enriched",
-]);

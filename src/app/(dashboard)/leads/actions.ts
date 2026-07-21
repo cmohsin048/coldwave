@@ -14,7 +14,6 @@ import {
 import { logger } from "@/lib/logger";
 import { verifyEmail } from "@/modules/leads/verify";
 import { findExistingEmails } from "@/modules/leads/queries";
-import { recordUsage } from "@/modules/billing/usage";
 import { normalizeEmail } from "@/lib/utils";
 import {
   apolloSearchSchema,
@@ -210,17 +209,6 @@ export const importFromApollo = action(importApolloSchema, async (input, ctx) =>
     .update(leadLists)
     .set({ leadCount: imported })
     .where(eq(leadLists.id, list!.id));
-
-  // Meter enrichment usage for billing — bill what we actually revealed
-  // (credits are spent on enrichment even if a lead later fails verification).
-  if (enrichedCount > 0) {
-    await recordUsage({
-      orgId: ctx.orgId,
-      metric: "lead_enriched",
-      quantity: enrichedCount,
-      reference: list!.id,
-    });
-  }
 
   revalidatePath("/leads");
   return {

@@ -15,11 +15,6 @@ import {
 import { action } from "@/lib/action";
 import { normalizeEmail } from "@/lib/utils";
 import { getEnv } from "@/lib/env";
-import {
-  createCheckoutSession,
-  createPortalSession,
-  isStripeConfigured,
-} from "@/modules/billing/stripe";
 
 export const updateOrgSettings = action(
   z.object({
@@ -33,32 +28,6 @@ export const updateOrgSettings = action(
       .where(eq(organizations.id, ctx.orgId));
     revalidatePath("/settings");
     return { updated: true };
-  },
-  { role: "admin" }
-);
-
-/** Start a metered-billing subscription via Stripe Checkout. */
-export const startCheckout = action(
-  z.object({}),
-  async (_input, ctx) => {
-    if (!isStripeConfigured()) {
-      throw new Error("Billing is not configured on this deployment.");
-    }
-    const url = await createCheckoutSession(ctx.orgId);
-    return { url };
-  },
-  { role: "admin" }
-);
-
-/** Open the Stripe customer portal (invoices, payment method, cancel). */
-export const openBillingPortal = action(
-  z.object({}),
-  async (_input, ctx) => {
-    if (!isStripeConfigured()) {
-      throw new Error("Billing is not configured on this deployment.");
-    }
-    const url = await createPortalSession(ctx.orgId);
-    return { url };
   },
   { role: "admin" }
 );

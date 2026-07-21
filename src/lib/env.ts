@@ -33,11 +33,6 @@ const serverSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_MODEL: z.string().default("gpt-4o"),
 
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PRICE_ID_EMAILS: z.string().optional(),
-  STRIPE_PRICE_ID_LEADS: z.string().optional(),
-
   SYSTEM_SMTP_HOST: z.string().optional(),
   SYSTEM_SMTP_PORT: z.coerce.number().default(587),
   SYSTEM_SMTP_USER: z.string().optional(),
