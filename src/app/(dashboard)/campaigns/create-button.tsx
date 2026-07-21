@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { createCampaign } from "./actions";
 
 export function CreateCampaignButton() {
@@ -21,12 +22,22 @@ export function CreateCampaignButton() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [pending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   function submit() {
     if (!name) return;
     startTransition(async () => {
       const res = await createCampaign({ name });
-      if (res.ok) router.push(`/campaigns/${res.data.campaignId}`);
+      if (res.ok) {
+        toast({ variant: "success", title: "Campaign created" });
+        router.push(`/campaigns/${res.data.campaignId}`);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Create failed",
+          description: res.error,
+        });
+      }
     });
   }
 

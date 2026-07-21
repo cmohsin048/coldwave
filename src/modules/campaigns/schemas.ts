@@ -17,6 +17,7 @@ export const createCampaignSchema = z.object({
 
 export const stepInputSchema = z.object({
   id: z.string().optional(), // present when updating an existing step
+  tempId: z.string().optional(), // client-side id for new steps, used to remap branch edges
   type: z.enum(["email", "wait", "condition"]).default("email"),
   stage: z
     .enum(["awareness", "interest", "demo", "close"])
@@ -35,6 +36,32 @@ export const stepInputSchema = z.object({
 export const saveStepsSchema = z.object({
   campaignId: z.string(),
   steps: z.array(stepInputSchema),
+  deletedStepIds: z.array(z.string()).default([]),
+});
+
+export const updateCampaignSettingsSchema = z.object({
+  campaignId: z.string(),
+  mailboxPool: z.array(z.string()).default([]),
+  sendPerTimezone: z.boolean(),
+  trackOpens: z.boolean(),
+  trackClicks: z.boolean(),
+  dailyCap: z.number().int().min(1).max(100000).nullable(),
+  scheduledStartAt: z.string().datetime({ offset: true }).nullable(),
+});
+
+export const stepVariantInputSchema = z.object({
+  variantId: z.string(),
+  subject: z.string().max(300),
+  body: z.string().max(10000),
+  weight: z.number().int().min(1).max(100).optional(),
+});
+
+export const addStepVariantSchema = z.object({
+  stepId: z.string(),
+});
+
+export const deleteStepVariantSchema = z.object({
+  variantId: z.string(),
 });
 
 export const updateStatusSchema = z.object({

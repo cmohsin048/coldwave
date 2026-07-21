@@ -7,17 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { registerAction } from "../actions";
 
 export function RegisterForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
-    setError(null);
     const form = new FormData(e.currentTarget);
     const email = String(form.get("email"));
     const password = String(form.get("password"));
@@ -31,7 +31,11 @@ export function RegisterForm() {
 
     if (!result.ok) {
       setLoading(false);
-      setError(result.error);
+      toast({
+        variant: "destructive",
+        title: "Registration failed",
+        description: result.error,
+      });
       return;
     }
 
@@ -67,7 +71,6 @@ export function RegisterForm() {
         />
         <p className="text-xs text-muted-foreground">At least 8 characters.</p>
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
       <Button type="submit" className="w-full" disabled={loading}>
         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
         Create account

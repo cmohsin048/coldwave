@@ -20,6 +20,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Loader2, UserPlus, Copy, Trash2, Check } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/use-toast";
 import { inviteMember, revokeInvitation, removeMember } from "./actions";
 
 interface MemberRow {
@@ -52,18 +54,29 @@ export function TeamCard({
   const [pending, startTransition] = useTransition();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"member" | "admin">("member");
-  const [error, setError] = useState<string | null>(null);
   const [lastInviteUrl, setLastInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<MemberRow | null>(null);
+  const { toast } = useToast();
 
   function invite() {
-    setError(null);
     startTransition(async () => {
       const res = await inviteMember({ email, role });
       if (res.ok) {
         setLastInviteUrl(res.data.inviteUrl);
         setEmail("");
-      } else setError(res.error);
+        toast({
+          variant: "success",
+          title: "Invitation created",
+          description: "Copy the invite link below and share it.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Invite failed",
+          description: res.error,
+        });
+      }
     });
   }
 
@@ -109,14 +122,7 @@ export function TeamCard({
                       size="icon"
                       variant="ghost"
                       disabled={pending}
-                      onClick={() =>
-                        startTransition(async () => {
-                          const res = await removeMember({
-                            membershipId: m.membershipId,
-                          });
-                          if (!res.ok) setError(res.error);
-                        })
-                      }
+                      onClick={() => setConfirmRemove(m)}
                     >
                       <Trash2 className="h-4 w-4 text-muted-foreground" />
                     </Button>
@@ -168,7 +174,18 @@ export function TeamCard({
                           const res = await revokeInvitation({
                             invitationId: inv.id,
                           });
-                          if (!res.ok) setError(res.error);
+                          if (res.ok) {
+                            toast({
+                              variant: "success",
+                              title: "Invitation revoked",
+                            });
+                          } else {
+                            toast({
+                              variant: "destructive",
+                              title: "Revoke failed",
+                              description: res.error,
+                            });
+                          }
                         })
                       }
                       title="Revoke invitation"
@@ -238,7 +255,30 @@ export function TeamCard({
           </p>
         </div>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <ConfirmDialog
+        open={confirmRemove !== null}
+        onOpenChange={(open) => !open && setConfirmRemove(null)}
+        title={`Remove ${confirmRemove?.name ?? confirmRemove?.email ?? "member"}?`}
+        description="They will immediately lose access to this workspace."
+        confirmLabel="Remove"
+        destructive
+        onConfirm={async () => {
+          if (!confirmRemove) return;
+          const res = await removeMember({
+            membershipId: confirmRemove.membershipId,
+          });
+          if (res.ok) {
+            toast({ variant: "success", title: "Member removed" });
+          } else {
+            toast({
+              variant: "destructive",
+              title: "Remove failed",
+              description: res.error,
+            });
+          }
+        }}
+      />
     </div>
   );
 }

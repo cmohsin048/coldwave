@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Upload, Download, Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { importCsv, exportLeadsCsv } from "./actions";
 
 export function CsvImportButton() {
@@ -26,6 +27,7 @@ export function CsvImportButton() {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -42,7 +44,11 @@ export function CsvImportButton() {
 
   function submit() {
     if (!listName || rows.length === 0) {
-      setMessage("Pick a file and name the list.");
+      toast({
+        variant: "destructive",
+        title: "Missing information",
+        description: "Pick a CSV file and name the list first.",
+      });
       return;
     }
     startTransition(async () => {
@@ -53,12 +59,22 @@ export function CsvImportButton() {
         verify: false,
       });
       if (!res.ok) {
-        setMessage(res.error);
+        toast({
+          variant: "destructive",
+          title: "Import failed",
+          description: res.error,
+        });
         return;
       }
-      setMessage(
-        `Imported ${res.data.imported} (${res.data.skippedDuplicates} duplicates).`
-      );
+      toast({
+        variant: "success",
+        title: "Leads imported",
+        description: `Imported ${res.data.imported} (${res.data.skippedDuplicates} duplicates skipped).`,
+      });
+      setOpen(false);
+      setRows([]);
+      setListName("");
+      setMessage(null);
       router.refresh();
     });
   }
@@ -105,11 +121,19 @@ export function CsvImportButton() {
 
 export function ExportCsvButton({ listId }: { listId?: string }) {
   const [pending, startTransition] = useTransition();
+  const { toast } = useToast();
 
   function download() {
     startTransition(async () => {
       const res = await exportLeadsCsv({ listId });
-      if (!res.ok) return;
+      if (!res.ok) {
+        toast({
+          variant: "destructive",
+          title: "Export failed",
+          description: res.error,
+        });
+        return;
+      }
       const blob = new Blob([res.data.csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

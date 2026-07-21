@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Search, Sparkles } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { previewApolloSearch, importFromApollo } from "./actions";
 
 /** Parse a comma-separated field into a trimmed array. */
@@ -55,7 +56,7 @@ export function NewSearchDialog() {
       emailStatus?: string;
     }>;
   } | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const filters = () => ({
     personTitles: toList(form.personTitles),
@@ -70,14 +71,17 @@ export function NewSearchDialog() {
   });
 
   function runPreview() {
-    setMessage(null);
     startTransition(async () => {
       const res = await previewApolloSearch({
         listName: form.listName || "preview",
         ...filters(),
       });
       if (!res.ok) {
-        setMessage(res.error);
+        toast({
+          variant: "destructive",
+          title: "Preview failed",
+          description: res.error,
+        });
         return;
       }
       setPreview({ totalEntries: res.data.totalEntries, sample: res.data.sample });
@@ -85,9 +89,12 @@ export function NewSearchDialog() {
   }
 
   function runImport() {
-    setMessage(null);
     if (!form.listName) {
-      setMessage("Give the list a name first.");
+      toast({
+        variant: "destructive",
+        title: "List name required",
+        description: "Give the list a name before importing.",
+      });
       return;
     }
     startTransition(async () => {
@@ -99,12 +106,19 @@ export function NewSearchDialog() {
         dedupe,
       });
       if (!res.ok) {
-        setMessage(res.error);
+        toast({
+          variant: "destructive",
+          title: "Import failed",
+          description: res.error,
+        });
         return;
       }
-      setMessage(
-        `Imported ${res.data.imported} leads (${res.data.skippedDuplicates} duplicates skipped, ${res.data.invalid} invalid).`
-      );
+      toast({
+        variant: "success",
+        title: "Leads imported",
+        description: `Imported ${res.data.imported} leads (${res.data.skippedDuplicates} duplicates skipped, ${res.data.invalid} invalid).`,
+      });
+      setOpen(false);
       router.refresh();
     });
   }
@@ -237,10 +251,6 @@ export function NewSearchDialog() {
               ))}
             </div>
           </div>
-        )}
-
-        {message && (
-          <p className="text-sm text-muted-foreground">{message}</p>
         )}
 
         <DialogFooter className="gap-2">

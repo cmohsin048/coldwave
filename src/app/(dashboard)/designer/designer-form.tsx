@@ -8,12 +8,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Sparkles } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { generateCampaign } from "../campaigns/actions";
 
 export function DesignerForm() {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
   const [form, setForm] = useState({
     name: "",
     icp: "",
@@ -32,16 +33,24 @@ export function DesignerForm() {
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
   function submit() {
-    setError(null);
     startTransition(async () => {
       const res = await generateCampaign({
         ...form,
         numSteps: Number(form.numSteps),
       });
       if (!res.ok) {
-        setError(res.error);
+        toast({
+          variant: "destructive",
+          title: "Generation failed",
+          description: res.error,
+        });
         return;
       }
+      toast({
+        variant: "success",
+        title: "Sequence generated",
+        description: "Opening the visual builder…",
+      });
       router.push(`/campaigns/${res.data.campaignId}`);
     });
   }
@@ -103,7 +112,6 @@ export function DesignerForm() {
             <Label>Goal</Label>
             <Input value={form.goal} onChange={set("goal")} />
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
           <Button onClick={submit} disabled={pending} className="w-full">
             {pending ? (
               <Loader2 className="h-4 w-4 animate-spin" />

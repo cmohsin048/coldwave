@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { SpamGauge } from "@/components/spam-gauge";
 import { Loader2, ShieldCheck, ScanLine } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { checkSpam, checkDomainHealth } from "./actions";
 
 type SpamResult = Awaited<ReturnType<typeof checkSpam>>;
@@ -24,6 +25,7 @@ export function SpamTester() {
   const [ip, setIp] = useState("");
   const [result, setResult] = useState<SpamResult | null>(null);
   const [domainResult, setDomainResult] = useState<DomainResult | null>(null);
+  const { toast } = useToast();
 
   function runSpam() {
     startTransition(async () => {
@@ -33,6 +35,13 @@ export function SpamTester() {
         domain: domain || undefined,
         sendingIp: ip || undefined,
       });
+      if (!res.ok) {
+        toast({
+          variant: "destructive",
+          title: "Spam check failed",
+          description: res.error,
+        });
+      }
       setResult(res);
     });
   }
@@ -44,6 +53,13 @@ export function SpamTester() {
         domain,
         sendingIp: ip || undefined,
       });
+      if (!res.ok) {
+        toast({
+          variant: "destructive",
+          title: "Domain check failed",
+          description: res.error,
+        });
+      }
       setDomainResult(res);
     });
   }

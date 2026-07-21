@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sparkles, Loader2, Send, Check } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { suggestReplyAction, sendReplyAction } from "./actions";
 
 export function ReplyAssist({ messageId }: { messageId: string }) {
@@ -11,23 +12,34 @@ export function ReplyAssist({ messageId }: { messageId: string }) {
   const [sending, startSending] = useTransition();
   const [draft, setDraft] = useState("");
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   function generate() {
-    setError(null);
     startTransition(async () => {
       const res = await suggestReplyAction({ messageId });
       if (res.ok) setDraft(res.data.draft);
-      else setError(res.error);
+      else
+        toast({
+          variant: "destructive",
+          title: "Suggestion failed",
+          description: res.error,
+        });
     });
   }
 
   function send() {
-    setError(null);
     startSending(async () => {
       const res = await sendReplyAction({ messageId, body: draft });
-      if (res.ok) setSent(true);
-      else setError(res.error);
+      if (res.ok) {
+        setSent(true);
+        toast({ variant: "success", title: "Reply sent" });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Send failed",
+          description: res.error,
+        });
+      }
     });
   }
 
@@ -66,7 +78,6 @@ export function ReplyAssist({ messageId }: { messageId: string }) {
           </Button>
         </>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

@@ -1,6 +1,12 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { messageEvents, campaigns, sendingDomains } from "@/db/schema";
+import {
+  messageEvents,
+  campaigns,
+  sendingDomains,
+  funnelStageStats,
+} from "@/db/schema";
+import { STAGE_ORDER } from "@/modules/campaigns/funnel";
 
 export interface EventTotals {
   sent: number;
@@ -69,6 +75,30 @@ export async function campaignPerformance(orgId: string) {
     byCampaign.set(r.campaignId, entry);
   }
   return [...byCampaign.entries()].map(([id, v]) => ({ id, ...v }));
+}
+
+/**
+ * Org-wide funnel stage conversion (awareness → interest → demo → close),
+ * aggregated across campaigns from the per-campaign rollup table.
+ */
+export async function funnelStageTotals(orgId: string) {
+  const rows = await db
+    .select({
+      stage: funnelStageStats.stage,
+      entered: sql<number>`sum(${funnelStageStats.entered})::int`,
+      converted: sql<number>`sum(${funnelStageStats.converted})::int`,
+    })
+    .from(funnelStageStats)
+    .where(eq(funnelStageStats.orgId, orgId))
+    .groupBy(funnelStageStats.stage);
+
+  const byStage = new Map(rows.map((r) => [r.stage, r]));
+  return STAGE_ORDER.map((stage) => {
+    const row = byStage.get(stage);
+    const entered = row?.entered ?? 0;
+    const converted = row?.converted ?? 0;
+    return { stage, entered, converted, rate: rate(converted, entered) };
+  });
 }
 
 /** Domain health scorecard rows. */

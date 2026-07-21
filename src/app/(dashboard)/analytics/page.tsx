@@ -3,6 +3,7 @@ import {
   orgEventTotals,
   campaignPerformance,
   domainScorecard,
+  funnelStageTotals,
   rate,
 } from "@/modules/analytics/queries";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -23,10 +24,11 @@ import { MailCheck, Eye, MousePointerClick, Reply } from "lucide-react";
 
 export default async function AnalyticsPage() {
   const ctx = await requireOrgContext();
-  const [totals, perf, domains] = await Promise.all([
+  const [totals, perf, domains, stages] = await Promise.all([
     orgEventTotals(ctx.orgId),
     campaignPerformance(ctx.orgId),
     domainScorecard(ctx.orgId),
+    funnelStageTotals(ctx.orgId),
   ]);
 
   const funnelData = [
@@ -122,6 +124,43 @@ export default async function AnalyticsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle>Funnel stage conversion</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {stages.every((s) => s.entered === 0) ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              No stage activity yet — enroll leads into a campaign to populate
+              the awareness → interest → demo → close funnel.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Entered</TableHead>
+                  <TableHead>Converted</TableHead>
+                  <TableHead>Conversion rate</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {stages.map((s) => (
+                  <TableRow key={s.stage}>
+                    <TableCell className="font-medium capitalize">
+                      {s.stage}
+                    </TableCell>
+                    <TableCell>{formatNumber(s.entered)}</TableCell>
+                    <TableCell>{formatNumber(s.converted)}</TableCell>
+                    <TableCell>{formatPercent(s.rate)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="mt-6">
         <CardHeader>

@@ -19,6 +19,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Loader2, Trash2, FolderInput } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/use-toast";
 import { deleteLeads, moveLeads } from "./actions";
 
 const verificationVariant: Record<
@@ -53,7 +55,8 @@ export function LeadsTable({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [moveTarget, setMoveTarget] = useState<string>("");
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { toast } = useToast();
 
   const allSelected = rows.length > 0 && selected.size === rows.length;
 
@@ -70,23 +73,44 @@ export function LeadsTable({
   }
 
   function bulkDelete() {
-    if (!window.confirm(`Delete ${selected.size} lead(s)? This cannot be undone.`))
-      return;
-    setError(null);
+    const count = selected.size;
     startTransition(async () => {
       const res = await deleteLeads({ leadIds: [...selected] });
-      if (res.ok) setSelected(new Set());
-      else setError(res.error);
+      if (res.ok) {
+        setSelected(new Set());
+        toast({
+          variant: "success",
+          title: "Leads deleted",
+          description: `${count} lead(s) removed.`,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Delete failed",
+          description: res.error,
+        });
+      }
     });
   }
 
   function bulkMove() {
     if (!moveTarget) return;
-    setError(null);
     startTransition(async () => {
       const res = await moveLeads({ leadIds: [...selected], listId: moveTarget });
-      if (res.ok) setSelected(new Set());
-      else setError(res.error);
+      if (res.ok) {
+        setSelected(new Set());
+        toast({
+          variant: "success",
+          title: "Leads moved",
+          description: `${res.data.moved} lead(s) moved to the selected list.`,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Move failed",
+          description: res.error,
+        });
+      }
     });
   }
 
@@ -128,7 +152,7 @@ export function LeadsTable({
             <Button
               size="sm"
               variant="destructive"
-              onClick={bulkDelete}
+              onClick={() => setConfirmDelete(true)}
               disabled={pending}
             >
               {pending ? (
@@ -141,7 +165,16 @@ export function LeadsTable({
           </div>
         </div>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${selected.size} lead(s)?`}
+        description="The selected leads will be permanently removed. This cannot be undone."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={bulkDelete}
+      />
 
       <Table>
         <TableHeader>

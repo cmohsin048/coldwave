@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Loader2, Check } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { acceptInvitation } from "./actions";
 
 export function AcceptInvite({
@@ -17,16 +18,20 @@ export function AcceptInvite({
   const router = useRouter();
   const { update } = useSession();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   function accept() {
-    setError(null);
     startTransition(async () => {
       const res = await acceptInvitation(token);
       if (!res.ok) {
-        setError(res.error);
+        toast({
+          variant: "destructive",
+          title: "Could not join workspace",
+          description: res.error,
+        });
         return;
       }
+      toast({ variant: "success", title: `Welcome to ${orgName}` });
       // Switch the JWT's active org to the one just joined, then land on it.
       await update({ activeOrgId: res.orgId });
       router.push("/dashboard");
@@ -44,7 +49,6 @@ export function AcceptInvite({
         )}
         Join {orgName}
       </Button>
-      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

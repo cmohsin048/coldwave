@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, Settings2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { updateWarmupConfig } from "./actions";
 
 export interface WarmupCurve {
@@ -39,21 +40,27 @@ export function EditWarmupConfigDialog({
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<WarmupCurve>(initial);
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   function save() {
-    setError(null);
     startTransition(async () => {
       const res = await updateWarmupConfig({ mailboxId, ...form });
       if (res.ok) {
         setOpen(false);
+        toast({
+          variant: "success",
+          title: "Warmup curve saved",
+          description: `Settings for ${email} updated.`,
+        });
         router.refresh();
       } else {
-        setError(
-          res.fieldErrors
+        toast({
+          variant: "destructive",
+          title: "Save failed",
+          description: res.fieldErrors
             ? Object.values(res.fieldErrors).flat().join(", ")
-            : res.error
-        );
+            : res.error,
+        });
       }
     });
   }
@@ -149,7 +156,6 @@ export function EditWarmupConfigDialog({
             />
           </div>
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel

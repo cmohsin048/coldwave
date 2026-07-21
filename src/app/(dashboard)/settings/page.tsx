@@ -19,6 +19,7 @@ import {
 import { OrgForm } from "./org-form";
 import { BillingCard } from "./billing-card";
 import { TeamCard } from "./team-card";
+import { AddSuppressionForm } from "./suppression-form";
 import { formatNumber } from "@/lib/utils";
 import { MailCheck, Target } from "lucide-react";
 
@@ -136,6 +137,7 @@ export default async function SettingsPage() {
           <CardTitle>Suppression list ({suppressed.length})</CardTitle>
         </CardHeader>
         <CardContent>
+          <AddSuppressionForm />
           {suppressed.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No suppressed addresses. Unsubscribes, bounces, and complaints land

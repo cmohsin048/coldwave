@@ -61,6 +61,25 @@ export const sessions = pgTable("session", {
   expires: timestamp("expires", { withTimezone: true }).notNull(),
 });
 
+/**
+ * Single-use password reset tokens (1h expiry). A token is invalidated either
+ * by use (`usedAt`) or by a newer request for the same user.
+ */
+export const passwordResetTokens = pgTable("password_reset_token", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => nanoid(21)),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const verificationTokens = pgTable(
   "verification_token",
   {

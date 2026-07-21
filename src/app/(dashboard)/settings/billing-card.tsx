@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, CreditCard, ExternalLink } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { startCheckout, openBillingPortal } from "./actions";
 
 export function BillingCard({
@@ -14,14 +15,18 @@ export function BillingCard({
   configured: boolean;
 }) {
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   function go(fn: typeof startCheckout) {
-    setError(null);
     startTransition(async () => {
       const res = await fn({});
       if (res.ok) window.location.href = res.data.url;
-      else setError(res.error);
+      else
+        toast({
+          variant: "destructive",
+          title: "Billing error",
+          description: res.error,
+        });
     });
   }
 
@@ -69,7 +74,6 @@ export function BillingCard({
           Billing portal
         </Button>
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

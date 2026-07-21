@@ -1,4 +1,4 @@
-import { and, eq, lte, inArray, asc, desc } from "drizzle-orm";
+import { and, eq, lte, gte, inArray, asc, desc, sql, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
 import {
   campaignEnrollments,
@@ -14,17 +14,34 @@ import { pickMailbox } from "@/modules/sending/pool";
 import { sendSequenceStep } from "@/modules/sending/send";
 import { enqueueSendStep } from "@/queues/queues";
 import { pickVariantForStep } from "./variants";
+import { recordStageTransition, recordStageReplyConversion } from "./funnel";
 import {
   timezoneForLead,
   isWithinSendWindow,
   nextSendWindow,
 } from "./timezone";
 
+/** Flip "scheduled" campaigns live once their scheduled start time arrives. */
+async function activateScheduledCampaigns(): Promise<void> {
+  await db
+    .update(campaigns)
+    .set({ status: "active", startedAt: new Date() })
+    .where(
+      and(
+        eq(campaigns.status, "scheduled"),
+        isNotNull(campaigns.scheduledStartAt),
+        lte(campaigns.scheduledStartAt, new Date())
+      )
+    );
+}
+
 /**
  * Scan for enrollments whose next step is due and enqueue a send job for each.
  * Invoked by the repeatable `campaign-tick` job every minute.
  */
 export async function tickDueEnrollments(limit = 500): Promise<number> {
+  await activateScheduledCampaigns();
+
   const due = await db
     .select({ id: campaignEnrollments.id })
     .from(campaignEnrollments)
@@ -164,6 +181,59 @@ export async function processEnrollmentStep(enrollmentId: string): Promise<void>
   });
   if (!campaign || campaign.status !== "active") return;
 
+  // Scheduled start: hold every send until the configured start time.
+  if (campaign.scheduledStartAt && campaign.scheduledStartAt > new Date()) {
+    const delayMs = campaign.scheduledStartAt.getTime() - Date.now();
+    await db
+      .update(campaignEnrollments)
+      .set({ nextRunAt: campaign.scheduledStartAt })
+      .where(eq(campaignEnrollments.id, enrollmentId));
+    await enqueueSendStep(enrollmentId, delayMs);
+    return;
+  }
+
+  // Campaign-level daily cap: once reached, resume at the next UTC midnight.
+  if (campaign.dailyCap && campaign.dailyCap > 0) {
+    const startOfDay = new Date();
+    startOfDay.setUTCHours(0, 0, 0, 0);
+    const [sentToday] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.campaignId, campaign.id),
+          eq(messages.direction, "outbound"),
+          inArray(messages.status, [
+            "sent",
+            "delivered",
+            "opened",
+            "clicked",
+            "replied",
+          ]),
+          gte(messages.sentAt, startOfDay)
+        )
+      );
+    if ((sentToday?.count ?? 0) >= campaign.dailyCap) {
+      const nextMidnight = new Date(startOfDay);
+      nextMidnight.setUTCDate(nextMidnight.getUTCDate() + 1);
+      // Small jitter so all capped enrollments don't fire at once.
+      const resumeAt = new Date(
+        nextMidnight.getTime() + Math.floor(Math.random() * 15 * 60 * 1000)
+      );
+      await db
+        .update(campaignEnrollments)
+        .set({ nextRunAt: resumeAt })
+        .where(eq(campaignEnrollments.id, enrollmentId));
+      await enqueueSendStep(enrollmentId, resumeAt.getTime() - Date.now());
+      logger.info("daily cap reached — send deferred", {
+        enrollmentId,
+        campaignId: campaign.id,
+        dailyCap: campaign.dailyCap,
+      });
+      return;
+    }
+  }
+
   const steps = await db
     .select()
     .from(sequenceSteps)
@@ -198,7 +268,7 @@ export async function processEnrollmentStep(enrollmentId: string): Promise<void>
 
   // Wait/condition steps just advance without sending.
   if (current.type !== "email") {
-    await advance(enrollment.id, current, steps);
+    await advance(enrollment, current, steps);
     return;
   }
 
@@ -271,7 +341,7 @@ export async function processEnrollmentStep(enrollmentId: string): Promise<void>
     return;
   }
 
-  await advance(enrollment.id, current, steps);
+  await advance(enrollment, current, steps);
 }
 
 /**
@@ -279,10 +349,16 @@ export async function processEnrollmentStep(enrollmentId: string): Promise<void>
  * or finish the enrollment.
  */
 async function advance(
-  enrollmentId: string,
+  enrollment: {
+    id: string;
+    orgId: string;
+    campaignId: string;
+    currentStage: string;
+  },
   current: SequenceStep,
   steps: SequenceStep[]
 ) {
+  const enrollmentId = enrollment.id;
   // Any branch target could run next; schedule for the soonest of them so the
   // due-time branch evaluation happens as early as the sequence allows.
   const candidateIds = [
@@ -311,15 +387,26 @@ async function advance(
     delayMsFor(a) <= delayMsFor(b) ? a : b
   );
 
+  const nextStage = (next ?? soonest).stage;
   await db
     .update(campaignEnrollments)
     .set({
       currentStepId: (next ?? soonest).id,
-      currentStage: (next ?? soonest).stage,
+      currentStage: nextStage,
       lastStepAt: new Date(),
       nextRunAt: new Date(Date.now() + delayMsFor(soonest)),
     })
     .where(eq(campaignEnrollments.id, enrollmentId));
+
+  // Funnel rollup: entering a later stage converts the one being left.
+  if (nextStage !== enrollment.currentStage) {
+    await recordStageTransition(
+      enrollment.orgId,
+      enrollment.campaignId,
+      enrollment.currentStage,
+      nextStage
+    );
+  }
 }
 
 /**
@@ -365,6 +452,14 @@ export async function pauseOnReply(orgId: string, leadId: string) {
             nextRunAt: new Date(Date.now() + delayMs),
           })
           .where(eq(campaignEnrollments.id, enrollment.id));
+        if (target.stage !== enrollment.currentStage) {
+          await recordStageTransition(
+            enrollment.orgId,
+            enrollment.campaignId,
+            enrollment.currentStage,
+            target.stage
+          );
+        }
         continue;
       }
     }
@@ -373,5 +468,11 @@ export async function pauseOnReply(orgId: string, leadId: string) {
       .update(campaignEnrollments)
       .set({ status: "replied" })
       .where(eq(campaignEnrollments.id, enrollment.id));
+    // A reply is the conversion event for whatever stage the lead was in.
+    await recordStageReplyConversion(
+      enrollment.orgId,
+      enrollment.campaignId,
+      enrollment.currentStage
+    );
   }
 }

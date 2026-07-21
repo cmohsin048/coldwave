@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Play, Pause, Loader2, UserPlus } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { updateCampaignStatus, enrollLeads } from "../actions";
 
 export function CampaignControls({
@@ -25,25 +26,52 @@ export function CampaignControls({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [listId, setListId] = useState<string | undefined>(lists[0]?.id);
-  const [msg, setMsg] = useState<string | null>(null);
+  const { toast } = useToast();
 
   function setStatus(next: "active" | "paused") {
     startTransition(async () => {
-      await updateCampaignStatus({ campaignId, status: next });
+      const res = await updateCampaignStatus({ campaignId, status: next });
+      if (res.ok) {
+        toast({
+          variant: "success",
+          title: next === "active" ? "Campaign launched" : "Campaign paused",
+          description:
+            next === "active"
+              ? "The worker will start sending due steps."
+              : "Sending is paused; enrollments keep their place.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Status change failed",
+          description: res.error,
+        });
+      }
       router.refresh();
     });
   }
 
   function enroll() {
     if (!listId) return;
-    setMsg(null);
     startTransition(async () => {
       const res = await enrollLeads({ campaignId, listId });
-      setMsg(
-        res.ok
-          ? `Enrolled ${res.data.enrolled} of ${res.data.total}.`
-          : res.error
-      );
+      if (res.ok) {
+        toast({
+          variant: "success",
+          title: "Leads enrolled",
+          description: `Enrolled ${res.data.enrolled} of ${res.data.total}${
+            res.data.skippedSuppressed
+              ? ` (${res.data.skippedSuppressed} suppressed/blocked skipped)`
+              : ""
+          }.`,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Enrollment failed",
+          description: res.error,
+        });
+      }
       router.refresh();
     });
   }
@@ -90,7 +118,6 @@ export function CampaignControls({
           Launch
         </Button>
       )}
-      {msg && <span className="text-xs text-muted-foreground">{msg}</span>}
     </div>
   );
 }

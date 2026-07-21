@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NewSearchDialog } from "./new-search-dialog";
 import { CsvImportButton, ExportCsvButton } from "./csv-tools";
 import { LeadsTable } from "./leads-table";
+import { DeleteListButton } from "./list-actions";
 import { formatNumber } from "@/lib/utils";
 
 export default async function LeadsPage({
@@ -54,16 +55,22 @@ export default async function LeadsPage({
               <p className="px-2 py-1.5 text-muted-foreground">No lists yet.</p>
             )}
             {lists.map((list) => (
-              <Link
-                key={list.id}
-                href={`/leads?list=${list.id}`}
-                className={`flex items-center justify-between rounded px-2 py-1.5 hover:bg-accent ${params.list === list.id ? "bg-accent font-medium" : ""}`}
-              >
-                <span className="truncate">{list.name}</span>
-                <span className="text-xs text-muted-foreground">
-                  {formatNumber(list.leadCount)}
-                </span>
-              </Link>
+              <div key={list.id} className="group flex items-center gap-1">
+                <Link
+                  href={`/leads?list=${list.id}`}
+                  className={`flex min-w-0 flex-1 items-center justify-between rounded px-2 py-1.5 hover:bg-accent ${params.list === list.id ? "bg-accent font-medium" : ""}`}
+                >
+                  <span className="truncate">{list.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatNumber(list.leadCount)}
+                  </span>
+                </Link>
+                <DeleteListButton
+                  listId={list.id}
+                  listName={list.name}
+                  leadCount={list.leadCount}
+                />
+              </div>
             ))}
           </CardContent>
         </Card>

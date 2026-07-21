@@ -14,6 +14,8 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useToast } from "@/components/ui/use-toast";
 import {
   addSendingDomain,
   recheckSendingDomain,
@@ -86,14 +88,26 @@ export function DomainsPanel({ domains }: { domains: DomainRow[] }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [newDomain, setNewDomain] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<DomainRow | null>(null);
+  const { toast } = useToast();
 
-  function run(id: string | null, fn: () => Promise<{ ok: boolean; error?: string }>) {
-    setError(null);
+  function run(
+    id: string | null,
+    fn: () => Promise<{ ok: boolean; error?: string }>,
+    successMessage?: string
+  ) {
     setBusyId(id);
     startTransition(async () => {
       const res = await fn();
-      if (!res.ok) setError(res.error ?? "Something went wrong");
+      if (!res.ok) {
+        toast({
+          variant: "destructive",
+          title: "Something went wrong",
+          description: res.error ?? "Please try again.",
+        });
+      } else if (successMessage) {
+        toast({ variant: "success", title: successMessage });
+      }
       setBusyId(null);
       router.refresh();
     });
@@ -171,10 +185,7 @@ export function DomainsPanel({ domains }: { domains: DomainRow[] }) {
                   variant="ghost"
                   title="Remove domain"
                   disabled={pending}
-                  onClick={() => {
-                    if (window.confirm(`Stop monitoring ${d.domain}?`))
-                      run(d.id, () => deleteSendingDomain({ domainId: d.id }));
-                  }}
+                  onClick={() => setConfirmRemove(d)}
                 >
                   <Trash2 className="h-4 w-4 text-muted-foreground" />
                 </Button>
@@ -204,13 +215,17 @@ export function DomainsPanel({ domains }: { domains: DomainRow[] }) {
             variant="outline"
             disabled={pending || !newDomain.trim()}
             onClick={() =>
-              run(null, async () => {
-                const res = await addSendingDomain({
-                  domain: newDomain.trim(),
-                });
-                if (res.ok) setNewDomain("");
-                return res;
-              })
+              run(
+                null,
+                async () => {
+                  const res = await addSendingDomain({
+                    domain: newDomain.trim(),
+                  });
+                  if (res.ok) setNewDomain("");
+                  return res;
+                },
+                "Domain added"
+              )
             }
           >
             {pending && busyId === null ? (
@@ -221,7 +236,23 @@ export function DomainsPanel({ domains }: { domains: DomainRow[] }) {
             Add domain
           </Button>
         </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <ConfirmDialog
+          open={confirmRemove !== null}
+          onOpenChange={(open) => !open && setConfirmRemove(null)}
+          title={`Stop monitoring ${confirmRemove?.domain ?? ""}?`}
+          description="The domain will be removed from the health scorecard. You can add it back at any time."
+          confirmLabel="Remove"
+          destructive
+          onConfirm={() => {
+            if (confirmRemove)
+              run(
+                confirmRemove.id,
+                () => deleteSendingDomain({ domainId: confirmRemove.id }),
+                "Domain removed"
+              );
+          }}
+        />
       </CardContent>
     </Card>
   );

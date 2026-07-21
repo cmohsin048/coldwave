@@ -1,22 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 
 export function LoginForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
-    setError(null);
     const form = new FormData(e.currentTarget);
 
     const res = await signIn("credentials", {
@@ -27,7 +28,11 @@ export function LoginForm() {
 
     setLoading(false);
     if (res?.error) {
-      setError("Invalid email or password.");
+      toast({
+        variant: "destructive",
+        title: "Sign in failed",
+        description: "Invalid email or password.",
+      });
       return;
     }
     router.push("/dashboard");
@@ -41,7 +46,15 @@ export function LoginForm() {
         <Input id="email" name="email" type="email" required autoComplete="email" />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password">Password</Label>
+          <Link
+            href="/forgot-password"
+            className="text-xs text-primary underline"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <Input
           id="password"
           name="password"
@@ -50,7 +63,6 @@ export function LoginForm() {
           autoComplete="current-password"
         />
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
       <Button type="submit" className="w-full" disabled={loading}>
         {loading && <Loader2 className="h-4 w-4 animate-spin" />}
         Sign in

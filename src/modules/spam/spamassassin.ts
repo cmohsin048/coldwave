@@ -56,7 +56,9 @@ export async function checkWithSpamAssassin(params: {
   return new Promise((resolve) => {
     const socket = net.createConnection({ host, port });
     let response = "";
-    const timeout = params.timeoutMs ?? 5000;
+    // Cold rule-set scans regularly take 5-10s in the sidecar; 5s cut real
+    // scans off mid-flight, so give the daemon room before degrading.
+    const timeout = params.timeoutMs ?? 15000;
     socket.setTimeout(timeout);
 
     const done = (result: SpamAssassinResult | null) => {

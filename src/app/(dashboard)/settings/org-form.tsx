@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { updateOrgSettings } from "./actions";
 
 export function OrgForm({
@@ -19,13 +20,20 @@ export function OrgForm({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState({ name, companyAddress });
-  const [msg, setMsg] = useState<string | null>(null);
+  const { toast } = useToast();
 
   function submit() {
-    setMsg(null);
     startTransition(async () => {
       const res = await updateOrgSettings(form);
-      setMsg(res.ok ? "Saved." : res.error);
+      if (res.ok) {
+        toast({ variant: "success", title: "Workspace settings saved" });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Save failed",
+          description: res.error,
+        });
+      }
       router.refresh();
     });
   }
@@ -53,7 +61,6 @@ export function OrgForm({
           Included in the footer of every campaign email. Required by law.
         </p>
       </div>
-      {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
       <Button onClick={submit} disabled={pending}>
         {pending && <Loader2 className="h-4 w-4 animate-spin" />}
         Save settings

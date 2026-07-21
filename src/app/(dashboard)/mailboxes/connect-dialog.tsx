@@ -15,13 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
 import { connectMailbox } from "./actions";
 
 export function ConnectMailboxDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const [msg, setMsg] = useState<string | null>(null);
+  const { toast } = useToast();
   const [form, setForm] = useState({
     email: "",
     fromName: "",
@@ -39,7 +40,6 @@ export function ConnectMailboxDialog() {
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
   function submit() {
-    setMsg(null);
     startTransition(async () => {
       const res = await connectMailbox({
         email: form.email,
@@ -56,16 +56,28 @@ export function ConnectMailboxDialog() {
         hourlySendLimit: Number(form.hourlySendLimit),
       });
       if (!res.ok) {
-        setMsg(res.error);
+        toast({
+          variant: "destructive",
+          title: "Connection failed",
+          description: res.error,
+        });
         return;
       }
-      setMsg(
-        res.data.verified
-          ? "Connected and verified."
-          : `Saved, but SMTP verification failed: ${res.data.error}`
-      );
+      if (res.data.verified) {
+        toast({
+          variant: "success",
+          title: "Mailbox connected",
+          description: `${form.email} verified and ready to send.`,
+        });
+        setOpen(false);
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Saved, but verification failed",
+          description: res.data.error ?? "SMTP verification failed.",
+        });
+      }
       router.refresh();
-      if (res.data.verified) setOpen(false);
     });
   }
 
@@ -124,7 +136,6 @@ export function ConnectMailboxDialog() {
             <Input value={form.hourlySendLimit} onChange={set("hourlySendLimit")} />
           </div>
         </div>
-        {msg && <p className="text-sm text-muted-foreground">{msg}</p>}
         <DialogFooter>
           <Button onClick={submit} disabled={pending}>
             {pending && <Loader2 className="h-4 w-4 animate-spin" />}
