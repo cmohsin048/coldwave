@@ -41,6 +41,7 @@ interface LeadRow {
   name: string;
   title: string | null;
   companyName: string | null;
+  industry: string | null;
   email: string;
   verification: string;
 }
@@ -191,6 +192,7 @@ export function LeadsTable({
             <TableHead>Name</TableHead>
             <TableHead>Title</TableHead>
             <TableHead>Company</TableHead>
+            <TableHead>Industry</TableHead>
             <TableHead>Email</TableHead>
             <TableHead>Status</TableHead>
           </TableRow>
@@ -210,6 +212,9 @@ export function LeadsTable({
               <TableCell className="font-medium">{lead.name}</TableCell>
               <TableCell className="text-muted-foreground">{lead.title}</TableCell>
               <TableCell>{lead.companyName}</TableCell>
+              <TableCell className="text-muted-foreground capitalize">
+                {lead.industry ?? "—"}
+              </TableCell>
               <TableCell className="text-muted-foreground">{lead.email}</TableCell>
               <TableCell>
                 <Badge variant={verificationVariant[lead.verification] ?? "secondary"}>

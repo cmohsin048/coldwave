@@ -25,6 +25,28 @@ import {
 import { z } from "zod";
 
 /**
+ * Typeahead over Apollo's industry taxonomy — powers the industry picker so
+ * users select real filterable industries instead of guessing names.
+ */
+export const searchIndustries = action(
+  z.object({ q: z.string().min(2).max(80) }),
+  async (input) => {
+    const apollo = getApolloClient();
+    const tags = await apollo.searchIndustryTags(input.q);
+    return {
+      industries: tags
+        .filter((t) => t.kind === "linkedin_industry")
+        .slice(0, 8)
+        .map((t) => ({
+          id: t.id,
+          name: t.cleaned_name ?? t.display_name ?? "",
+        }))
+        .filter((t) => t.name),
+    };
+  }
+);
+
+/**
  * Preview an Apollo people search WITHOUT importing (no email reveal / credit
  * spend). Returns a lightweight sample for the filter UI.
  */
@@ -52,6 +74,7 @@ export const previewApolloSearch = action(
         name: p.name ?? `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim(),
         title: p.title,
         company: p.organization?.name,
+        industry: p.organization?.industry,
         location: [p.city, p.state, p.country].filter(Boolean).join(", "),
         emailStatus: p.email_status,
       })),

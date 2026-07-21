@@ -64,8 +64,17 @@ export interface PeopleSearchResult {
   totalPages: number;
 }
 
+export interface ApolloTag {
+  id: string;
+  kind?: string;
+  cleaned_name?: string;
+  display_name?: string;
+}
+
 class ApolloClient {
   private apiKey: string;
+  /** industry name (lowercased) → resolved tag id, or null when no match. */
+  private industryTagCache = new Map<string, string | null>();
 
   constructor(apiKey?: string) {
     const key = apiKey ?? getEnv().APOLLO_API_KEY;
@@ -113,6 +122,43 @@ class ApolloClient {
     );
   }
 
+  /** Fuzzy-search Apollo's industry tag taxonomy (LinkedIn industries). */
+  async searchIndustryTags(query: string): Promise<ApolloTag[]> {
+    const data = await this.request<{ tags?: ApolloTag[] }>("/tags/search", {
+      q_tag_fuzzy_name: query,
+      kind: "linkedin_industry",
+    });
+    return data.tags ?? [];
+  }
+
+  /**
+   * Resolve free-text industry names ("medical practice", "marketing") to
+   * Apollo tag ids. Apollo REJECTS names in `organization_industry_tag_ids`
+   * (HTTP 422), so this lookup is required. Terms with no matching industry
+   * tag (e.g. "dental clinic" — not a LinkedIn industry) are returned as
+   * `unresolved` so callers can fold them into the keyword search instead of
+   * silently dropping them.
+   */
+  async resolveIndustryTagIds(
+    names: string[]
+  ): Promise<{ ids: string[]; unresolved: string[] }> {
+    const ids: string[] = [];
+    const unresolved: string[] = [];
+    for (const raw of names) {
+      const name = raw.trim().toLowerCase();
+      if (!name) continue;
+      let id = this.industryTagCache.get(name);
+      if (id === undefined) {
+        const tags = await this.searchIndustryTags(name).catch(() => []);
+        id = tags.find((t) => t.kind === "linkedin_industry")?.id ?? null;
+        this.industryTagCache.set(name, id);
+      }
+      if (id) ids.push(id);
+      else unresolved.push(raw.trim());
+    }
+    return { ids: [...new Set(ids)], unresolved };
+  }
+
   /** People search with ColdWave's filter shape mapped to Apollo params. */
   async searchPeople(
     filters: PeopleSearchFilters
@@ -128,13 +174,21 @@ class ApolloClient {
     if (filters.locations?.length) body.person_locations = filters.locations;
     if (filters.organizationLocations?.length)
       body.organization_locations = filters.organizationLocations;
-    if (filters.industries?.length)
-      body.organization_industry_tag_ids = filters.industries;
+
+    const keywordParts = filters.keywords ? [filters.keywords] : [];
+    if (filters.industries?.length) {
+      const { ids, unresolved } = await this.resolveIndustryTagIds(
+        filters.industries
+      );
+      if (ids.length) body.organization_industry_tag_ids = ids;
+      // Non-taxonomy terms still narrow the search via keywords.
+      keywordParts.push(...unresolved);
+    }
     if (filters.employeeRanges?.length)
       body.organization_num_employees_ranges = filters.employeeRanges;
     if (filters.technologies?.length)
       body.currently_using_any_of_technology_uids = filters.technologies;
-    if (filters.keywords) body.q_keywords = filters.keywords;
+    if (keywordParts.length) body.q_keywords = keywordParts.join(" ");
 
     const data = await this.request<{
       people?: ApolloPerson[];
@@ -171,15 +225,22 @@ class ApolloClient {
       page: filters.page ?? 1,
       per_page: Math.min(filters.perPage ?? 25, 100),
     };
-    if (filters.industries?.length)
-      body.organization_industry_tag_ids = filters.industries;
+    const keywordParts = filters.keywords ? [filters.keywords] : [];
+    if (filters.industries?.length) {
+      const { ids, unresolved } = await this.resolveIndustryTagIds(
+        filters.industries
+      );
+      if (ids.length) body.organization_industry_tag_ids = ids;
+      keywordParts.push(...unresolved);
+    }
     if (filters.locations?.length)
       body.organization_locations = filters.locations;
     if (filters.employeeRanges?.length)
       body.organization_num_employees_ranges = filters.employeeRanges;
     if (filters.technologies?.length)
       body.currently_using_any_of_technology_uids = filters.technologies;
-    if (filters.keywords) body.q_organization_keyword_tags = filters.keywords;
+    if (keywordParts.length)
+      body.q_organization_keyword_tags = keywordParts.join(" ");
 
     const data = await this.request<{
       organizations?: ApolloOrganization[];
