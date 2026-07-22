@@ -10,9 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Play, Pause, Loader2, UserPlus } from "lucide-react";
+import { Play, Pause, Loader2, UserPlus, Trash2 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { updateCampaignStatus, enrollLeads } from "../actions";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { updateCampaignStatus, enrollLeads, deleteCampaign } from "../actions";
 
 export function CampaignControls({
   campaignId,
@@ -26,6 +27,7 @@ export function CampaignControls({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [listId, setListId] = useState<string | undefined>(lists[0]?.id);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const { toast } = useToast();
 
   function setStatus(next: "active" | "paused") {
@@ -118,6 +120,40 @@ export function CampaignControls({
           Launch
         </Button>
       )}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-muted-foreground hover:text-destructive"
+        onClick={() => setConfirmDelete(true)}
+        disabled={pending}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete campaign?"
+        description="This campaign and all its steps, variants, and enrollments will be permanently deleted. Already-sent emails stay in your history."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          // On success the action redirects to /campaigns server-side (so the
+          // deleted page never re-renders); res is only set on failure.
+          const res = await deleteCampaign({
+            campaignId,
+            redirectTo: "/campaigns",
+          });
+          if (res && !res.ok) {
+            toast({
+              variant: "destructive",
+              title: "Delete failed",
+              description: res.error,
+            });
+          } else {
+            toast({ variant: "success", title: "Campaign deleted" });
+          }
+        }}
+      />
     </div>
   );
 }

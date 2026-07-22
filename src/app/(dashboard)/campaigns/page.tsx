@@ -5,8 +5,8 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Sparkles } from "lucide-react";
-import { CreateCampaignButton } from "./create-button";
+import { Plus, Sparkles } from "lucide-react";
+import { CampaignRowActions } from "./campaign-row-actions";
 
 const statusVariant: Record<
   string,
@@ -37,7 +37,12 @@ export default async function CampaignsPage() {
                 AI Designer
               </Link>
             </Button>
-            <CreateCampaignButton />
+            <Button asChild>
+              <Link href="/campaigns/new">
+                <Plus className="h-4 w-4" />
+                New campaign
+              </Link>
+            </Button>
           </div>
         }
       />
@@ -60,9 +65,15 @@ export default async function CampaignsPage() {
                       Created {c.createdAt.toLocaleDateString()}
                     </p>
                   </div>
-                  <Badge variant={statusVariant[c.status] ?? "secondary"}>
-                    {c.status}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={statusVariant[c.status] ?? "secondary"}>
+                      {c.status}
+                    </Badge>
+                    <CampaignRowActions
+                      campaignId={c.id}
+                      campaignName={c.name}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             </Link>

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Sparkles } from "lucide-react";
+import { describeActionError } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast";
 import { generateCampaign } from "../campaigns/actions";
 
@@ -42,7 +43,7 @@ export function DesignerForm() {
         toast({
           variant: "destructive",
           title: "Generation failed",
-          description: res.error,
+          description: describeActionError(res),
         });
         return;
       }

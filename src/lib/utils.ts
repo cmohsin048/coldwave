@@ -25,6 +25,18 @@ export function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/** Turn a failed ActionResult's fieldErrors into a readable one-line message. */
+export function describeActionError(res: {
+  error: string;
+  fieldErrors?: Record<string, string[]>;
+}): string {
+  if (!res.fieldErrors) return res.error;
+  const lines = Object.entries(res.fieldErrors).map(
+    ([field, msgs]) => `${field}: ${msgs.join(", ")}`
+  );
+  return lines.length ? lines.join(" · ") : res.error;
+}
+
 /** Normalize an email for dedupe/comparison (lowercase, trim). */
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -17,6 +18,9 @@ import { recordStageEntered } from "@/modules/campaigns/funnel";
 import {
   briefSchema,
   createCampaignSchema,
+  createCampaignWithEmailSchema,
+  deleteCampaignSchema,
+  emailBriefSchema,
   saveStepsSchema,
   updateStatusSchema,
   enrollLeadsSchema,
@@ -34,6 +38,77 @@ export const createCampaign = action(createCampaignSchema, async (input, ctx) =>
     .returning();
   revalidatePath("/campaigns");
   return { campaignId: c!.id };
+});
+
+/**
+ * Generate copy for a single email from a brief without persisting anything.
+ * Used by the one-page campaign creator to prefill the subject/body fields,
+ * which the user can still edit before creating.
+ */
+export const generateEmailCopy = action(emailBriefSchema, async (input) => {
+  const sequence = await generateSequence({ ...input, numSteps: 1 });
+  const step = sequence.steps[0];
+  if (!step) throw new Error("AI returned no email");
+  return { subject: step.subject, body: step.body };
+});
+
+/**
+ * One-page creation: campaign + its first email step in a single call,
+ * optionally enrolling a lead list right away.
+ */
+export const createCampaignWithEmail = action(
+  createCampaignWithEmailSchema,
+  async (input, ctx) => {
+    const campaignId = await db.transaction(async (tx) => {
+      const [campaign] = await tx
+        .insert(campaigns)
+        .values({ orgId: ctx.orgId, name: input.name, status: "draft" })
+        .returning();
+
+      await tx.insert(sequenceSteps).values({
+        orgId: ctx.orgId,
+        campaignId: campaign!.id,
+        type: "email",
+        stage: "awareness",
+        order: 0,
+        subject: input.subject,
+        body: input.body,
+        delayDays: 0,
+        position: { x: 250, y: 80 },
+      });
+
+      return campaign!.id;
+    });
+
+    let enrolled: number | null = null;
+    let enrollError: string | null = null;
+    if (input.listId) {
+      const res = await enrollLeads({ campaignId, listId: input.listId });
+      if (res.ok) enrolled = res.data.enrolled;
+      else enrollError = res.error;
+    }
+
+    revalidatePath("/campaigns");
+    return { campaignId, enrolled, enrollError };
+  }
+);
+
+/** Delete a campaign. Steps, variants, enrollments, and funnel stats cascade;
+ *  sent messages are kept with their campaign reference nulled. */
+export const deleteCampaign = action(deleteCampaignSchema, async (input, ctx) => {
+  const res = await db
+    .delete(campaigns)
+    .where(
+      and(eq(campaigns.id, input.campaignId), eq(campaigns.orgId, ctx.orgId))
+    )
+    .returning({ id: campaigns.id });
+  if (res.length === 0) throw new Error("Campaign not found");
+  revalidatePath("/campaigns");
+  // Server-side redirect so the (now deleted) campaign page is never
+  // re-rendered — a client-side push after the action races the refresh
+  // and lands on a 404.
+  if (input.redirectTo) redirect(input.redirectTo);
+  return { deleted: true };
 });
 
 /**

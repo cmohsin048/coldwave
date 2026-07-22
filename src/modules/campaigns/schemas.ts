@@ -1,18 +1,47 @@
 import { z } from "zod";
 
 export const briefSchema = z.object({
-  name: z.string().min(1).max(120),
-  icp: z.string().min(3),
-  product: z.string().min(3),
-  tone: z.string().min(2),
-  offer: z.string().min(2),
-  goal: z.string().min(2),
+  name: z.string().min(1, "Campaign name is required").max(120),
+  icp: z.string().min(3, "Describe who you're targeting"),
+  product: z.string().min(3, "Describe what you're selling"),
+  // Optional refinements — blanks fall back to sensible defaults.
+  tone: z.string().transform((v) => v.trim() || "friendly, direct"),
+  offer: z.string().default(""),
+  goal: z.string().transform((v) => v.trim() || "book a short call"),
   numSteps: z.number().int().min(1).max(8).default(4),
 });
 export type BriefInput = z.infer<typeof briefSchema>;
 
 export const createCampaignSchema = z.object({
   name: z.string().min(1).max(120),
+});
+
+/** Brief for generating a single email's copy (no campaign persisted).
+ *  Only ICP and product are required; the rest fall back to sensible defaults. */
+export const emailBriefSchema = z.object({
+  icp: z.string().min(3, "Describe who you're targeting"),
+  product: z.string().min(3, "Describe what you're selling"),
+  tone: z
+    .string()
+    .transform((v) => v.trim() || "friendly, direct"),
+  offer: z.string().default(""),
+  goal: z
+    .string()
+    .transform((v) => v.trim() || "start a conversation"),
+});
+
+export const createCampaignWithEmailSchema = z.object({
+  name: z.string().min(1).max(120),
+  subject: z.string().min(1).max(300),
+  body: z.string().min(1).max(10000),
+  listId: z.string().optional(),
+});
+
+export const deleteCampaignSchema = z.object({
+  campaignId: z.string(),
+  // In-app path to navigate to after deletion (used when deleting the
+  // campaign whose page is currently open, so the stale page never re-renders).
+  redirectTo: z.string().startsWith("/").optional(),
 });
 
 export const stepInputSchema = z.object({

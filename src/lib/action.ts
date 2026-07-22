@@ -56,6 +56,18 @@ export function action<S extends z.ZodTypeAny, TOutput>(
       const data = await handler(parsed.data, ctx);
       return { ok: true, data };
     } catch (err) {
+      // Next.js implements redirect()/notFound() by throwing control-flow
+      // errors that its runtime must receive — rethrow them untouched.
+      if (
+        typeof err === "object" &&
+        err !== null &&
+        "digest" in err &&
+        typeof (err as { digest: unknown }).digest === "string" &&
+        ((err as { digest: string }).digest.startsWith("NEXT_REDIRECT") ||
+          (err as { digest: string }).digest.startsWith("NEXT_HTTP_ERROR"))
+      ) {
+        throw err;
+      }
       if (
         err instanceof UnauthenticatedError ||
         err instanceof ForbiddenError
