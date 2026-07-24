@@ -23,8 +23,8 @@ const features = [
   {
     icon: Sparkles,
     title: "AI Campaign Designer",
-    href: "/designer",
-    body: "Describe your ICP and offer — get a multi-step sequence with subject lines, spintax body variants, and branch logic.",
+    href: "/campaigns",
+    body: "Describe your ICP and offer — get a multi-step sequence with subject lines, spintax body variants, and branch logic, right on the campaign canvas.",
   },
   {
     icon: ShieldCheck,

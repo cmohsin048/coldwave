@@ -164,6 +164,82 @@ export async function generateSequence(
   return parsed;
 }
 
+/** AI classification of an inbound reply's sentiment. */
+export interface ReplyClassification {
+  sentiment: "positive" | "neutral" | "negative";
+  /** One-line gist of what the lead said (max ~120 chars). */
+  summary: string;
+}
+
+const sentimentJsonSchema = {
+  name: "reply_sentiment",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["sentiment", "summary"],
+    properties: {
+      sentiment: {
+        type: "string",
+        enum: ["positive", "neutral", "negative"],
+        description:
+          "positive = interested / wants to talk / asks for more info; negative = not interested / stop contacting / hostile; neutral = out-of-office, auto-reply, ambiguous, or unclear.",
+      },
+      summary: {
+        type: "string",
+        description: "One short sentence summarizing the reply.",
+      },
+    },
+  },
+} as const;
+
+/**
+ * Classify an inbound campaign reply as positive / neutral / negative with a
+ * one-line summary. Used by the reply-sync worker; callers should treat
+ * failures as non-fatal (leave the message unclassified).
+ */
+export async function classifyReplySentiment(params: {
+  subject: string;
+  body: string;
+}): Promise<ReplyClassification> {
+  const openai = getOpenAI();
+  const model = getEnv().OPENAI_MODEL;
+
+  const raw = await withRetry(
+    async () => {
+      const completion = await openai.chat.completions.create({
+        model,
+        temperature: 0,
+        response_format: {
+          type: "json_schema",
+          json_schema: sentimentJsonSchema,
+        },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You classify replies to cold sales emails. Judge the LEAD's attitude toward continuing the conversation. Out-of-office and automatic replies are neutral. Unsubscribe requests and 'not interested' are negative, even when phrased politely.",
+          },
+          {
+            role: "user",
+            content: `Subject: ${params.subject}\n\nReply:\n${params.body.slice(0, 4000)}`,
+          },
+        ],
+      });
+      const content = completion.choices[0]?.message?.content;
+      if (!content) throw new Error("OpenAI returned empty content");
+      return content;
+    },
+    { label: "openai-sentiment", retries: 3, baseDelayMs: 1000 }
+  );
+
+  const parsed = JSON.parse(raw) as ReplyClassification;
+  if (!["positive", "neutral", "negative"].includes(parsed.sentiment)) {
+    throw new Error(`Unexpected sentiment: ${parsed.sentiment}`);
+  }
+  return parsed;
+}
+
 /** Suggest a reply to an inbound message (unified inbox assist). */
 export async function suggestReply(params: {
   threadContext: string;

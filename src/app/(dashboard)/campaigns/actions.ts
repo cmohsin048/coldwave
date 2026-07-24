@@ -16,7 +16,7 @@ import { action } from "@/lib/action";
 import { generateSequence } from "@/modules/ai/openai";
 import { recordStageEntered } from "@/modules/campaigns/funnel";
 import {
-  briefSchema,
+  generateStepsSchema,
   createCampaignSchema,
   createCampaignWithEmailSchema,
   deleteCampaignSchema,
@@ -112,90 +112,105 @@ export const deleteCampaign = action(deleteCampaignSchema, async (input, ctx) =>
 });
 
 /**
- * AI designer: generate a full sequence from a brief and persist campaign +
- * steps + A/B variants. Branch conditions from the model are resolved to step
- * ids after all steps are inserted.
+ * Canvas AI: generate a full sequence from a brief and add the steps (with
+ * A/B variants and linear branch edges) to an existing campaign. New steps are
+ * appended below whatever is already on the canvas; the brief is stored on the
+ * campaign for later regeneration.
  */
-export const generateCampaign = action(briefSchema, async (input, ctx) => {
-  const sequence = await generateSequence({
-    icp: input.icp,
-    product: input.product,
-    tone: input.tone,
-    offer: input.offer,
-    goal: input.goal,
-    numSteps: input.numSteps,
-  });
+export const generateStepsForCampaign = action(
+  generateStepsSchema,
+  async (input, ctx) => {
+    const campaign = await db.query.campaigns.findFirst({
+      where: and(
+        eq(campaigns.id, input.campaignId),
+        eq(campaigns.orgId, ctx.orgId)
+      ),
+    });
+    if (!campaign) throw new Error("Campaign not found");
 
-  const campaignId = await db.transaction(async (tx) => {
-    const [campaign] = await tx
-      .insert(campaigns)
-      .values({
-        orgId: ctx.orgId,
-        name: input.name,
-        status: "draft",
-        brief: input as Record<string, unknown>,
-      })
-      .returning();
+    const sequence = await generateSequence({
+      icp: input.icp,
+      product: input.product,
+      tone: input.tone,
+      offer: input.offer,
+      goal: input.goal,
+      numSteps: input.numSteps,
+    });
 
-    const sorted = [...sequence.steps].sort((a, b) => a.order - b.order);
+    const existing = await db
+      .select({ id: sequenceSteps.id })
+      .from(sequenceSteps)
+      .where(eq(sequenceSteps.campaignId, input.campaignId));
+    const offset = existing.length;
 
-    // Insert steps, laying them out vertically on the React Flow canvas.
-    const inserted = [];
-    for (let i = 0; i < sorted.length; i++) {
-      const step = sorted[i]!;
-      const [row] = await tx
-        .insert(sequenceSteps)
-        .values({
-          orgId: ctx.orgId,
-          campaignId: campaign!.id,
-          type: "email",
-          stage: step.stage,
-          order: step.order,
-          subject: step.subject,
-          body: step.body,
-          delayDays: step.delayDays,
-          position: { x: 250, y: 80 + i * 180 },
-        })
-        .returning();
-      inserted.push(row!);
+    await db.transaction(async (tx) => {
+      const { campaignId: _cid, numSteps: _n, ...brief } = input;
+      await tx
+        .update(campaigns)
+        .set({ brief: brief as Record<string, unknown> })
+        .where(eq(campaigns.id, input.campaignId));
 
-      // A/B variants (the primary body is variant A; model extras are B, C...).
-      const variantRows = [
-        { label: "A", subject: step.subject, body: step.body },
-        ...step.variants.map((v, idx) => ({
-          label: String.fromCharCode(66 + idx),
-          subject: v.subject,
-          body: v.body,
-        })),
-      ];
-      if (variantRows.length > 1) {
-        await tx.insert(stepVariants).values(
-          variantRows.map((v) => ({
+      const sorted = [...sequence.steps].sort((a, b) => a.order - b.order);
+
+      // Insert steps, laying them out vertically below existing nodes.
+      const inserted = [];
+      for (let i = 0; i < sorted.length; i++) {
+        const step = sorted[i]!;
+        const [row] = await tx
+          .insert(sequenceSteps)
+          .values({
             orgId: ctx.orgId,
-            stepId: row!.id,
-            label: v.label,
+            campaignId: input.campaignId,
+            type: "email",
+            stage: step.stage,
+            order: offset + i,
+            subject: step.subject,
+            body: step.body,
+            delayDays: step.delayDays,
+            position: { x: 250, y: 80 + (offset + i) * 180 },
+          })
+          .returning();
+        inserted.push(row!);
+
+        // A/B variants (the primary body is variant A; model extras are B, C...).
+        const variantRows = [
+          { label: "A", subject: step.subject, body: step.body },
+          ...step.variants.map((v, idx) => ({
+            label: String.fromCharCode(66 + idx),
             subject: v.subject,
             body: v.body,
-            weight: Math.floor(100 / variantRows.length),
-          }))
-        );
+          })),
+        ];
+        if (variantRows.length > 1) {
+          await tx.insert(stepVariants).values(
+            variantRows.map((v) => ({
+              orgId: ctx.orgId,
+              stepId: row!.id,
+              label: v.label,
+              subject: v.subject,
+              body: v.body,
+              weight: Math.floor(100 / variantRows.length),
+            }))
+          );
+        }
       }
-    }
 
-    // Link linear next-step edges (branch semantics kept in columns for the UI).
-    for (let i = 0; i < inserted.length - 1; i++) {
-      await tx
-        .update(sequenceSteps)
-        .set({ nextStepId: inserted[i + 1]!.id, nextIfNoOpen: inserted[i + 1]!.id })
-        .where(eq(sequenceSteps.id, inserted[i]!.id));
-    }
+      // Link linear next-step edges (branch semantics kept in columns for the UI).
+      for (let i = 0; i < inserted.length - 1; i++) {
+        await tx
+          .update(sequenceSteps)
+          .set({
+            nextStepId: inserted[i + 1]!.id,
+            nextIfNoOpen: inserted[i + 1]!.id,
+          })
+          .where(eq(sequenceSteps.id, inserted[i]!.id));
+      }
+    });
 
-    return campaign!.id;
-  });
-
-  revalidatePath("/campaigns");
-  return { campaignId, strategy: sequence.strategy };
-});
+    revalidatePath(`/campaigns/${input.campaignId}`);
+    return { added: sequence.steps.length, strategy: sequence.strategy };
+  }
+);
 
 /**
  * Persist the React Flow builder state (upsert steps + edges, delete removed

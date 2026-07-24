@@ -111,6 +111,13 @@ export const eventType = pgEnum("event_type", [
   "failed",
 ]);
 
+/** AI-classified sentiment of an inbound reply. */
+export const replySentiment = pgEnum("reply_sentiment", [
+  "positive",
+  "neutral",
+  "negative",
+]);
+
 export const suppressionScope = pgEnum("suppression_scope", [
   "global",
   "campaign",

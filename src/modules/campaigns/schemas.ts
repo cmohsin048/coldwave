@@ -1,34 +1,28 @@
 import { z } from "zod";
 
-export const briefSchema = z.object({
-  name: z.string().min(1, "Campaign name is required").max(120),
+/** Brief fields shared by all AI generation. Only ICP and product are
+ *  required; the rest fall back to sensible defaults. */
+const briefFields = {
   icp: z.string().min(3, "Describe who you're targeting"),
   product: z.string().min(3, "Describe what you're selling"),
-  // Optional refinements — blanks fall back to sensible defaults.
   tone: z.string().transform((v) => v.trim() || "friendly, direct"),
   offer: z.string().default(""),
   goal: z.string().transform((v) => v.trim() || "book a short call"),
+};
+
+/** Generate a full sequence into an existing campaign (canvas AI dialog). */
+export const generateStepsSchema = z.object({
+  campaignId: z.string(),
+  ...briefFields,
   numSteps: z.number().int().min(1).max(8).default(4),
 });
-export type BriefInput = z.infer<typeof briefSchema>;
 
 export const createCampaignSchema = z.object({
   name: z.string().min(1).max(120),
 });
 
-/** Brief for generating a single email's copy (no campaign persisted).
- *  Only ICP and product are required; the rest fall back to sensible defaults. */
-export const emailBriefSchema = z.object({
-  icp: z.string().min(3, "Describe who you're targeting"),
-  product: z.string().min(3, "Describe what you're selling"),
-  tone: z
-    .string()
-    .transform((v) => v.trim() || "friendly, direct"),
-  offer: z.string().default(""),
-  goal: z
-    .string()
-    .transform((v) => v.trim() || "start a conversation"),
-});
+/** Brief for generating a single email's copy (no campaign persisted). */
+export const emailBriefSchema = z.object(briefFields);
 
 export const createCampaignWithEmailSchema = z.object({
   name: z.string().min(1).max(120),

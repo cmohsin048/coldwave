@@ -64,7 +64,19 @@ export default async function CampaignDetailPage({
       />
       <div className="min-h-[560px] flex-1 overflow-hidden rounded-lg border">
         <SequenceBuilder
+          // Remount when the step set changes (AI generation, save of new
+          // steps) so the canvas reflects the server state.
+          key={data.steps.map((s) => s.id).join("|")}
           campaignId={data.campaign.id}
+          brief={
+            data.campaign.brief as {
+              icp?: string;
+              product?: string;
+              tone?: string;
+              offer?: string;
+              goal?: string;
+            } | null
+          }
           initialSteps={data.steps.map((s) => ({
             id: s.id,
             type: s.type,

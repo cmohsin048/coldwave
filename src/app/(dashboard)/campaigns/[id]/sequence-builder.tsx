@@ -29,8 +29,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, Plus, Save, Trash2, Trophy, FlaskConical } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  Save,
+  Sparkles,
+  Trash2,
+  Trophy,
+  FlaskConical,
+} from "lucide-react";
 import { countVariants } from "@/modules/spintax";
+import { AiDialog, type AiBrief } from "./ai-dialog";
 import {
   saveSteps,
   addStepVariant,
@@ -94,9 +103,11 @@ let tempCounter = 0;
 export function SequenceBuilder({
   campaignId,
   initialSteps,
+  brief,
 }: {
   campaignId: string;
   initialSteps: StepData[];
+  brief?: Partial<AiBrief> | null;
 }) {
   const router = useRouter();
   const [steps, setSteps] = useState<Record<string, StepData>>(() =>
@@ -414,6 +425,17 @@ export function SequenceBuilder({
             <Plus className="h-4 w-4" />
             Add step
           </Button>
+          <AiDialog
+            mode="sequence"
+            campaignId={campaignId}
+            initialBrief={brief}
+            trigger={
+              <Button size="sm" variant="outline">
+                <Sparkles className="h-4 w-4" />
+                Generate with AI
+              </Button>
+            }
+          />
           <Button size="sm" onClick={save} disabled={pending}>
             {pending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -499,7 +521,27 @@ export function SequenceBuilder({
             />
           </div>
           <div className="space-y-1">
-            <Label>Body</Label>
+            <div className="flex items-center justify-between">
+              <Label>Body</Label>
+              <AiDialog
+                mode="step"
+                campaignId={campaignId}
+                initialBrief={brief}
+                onEmail={({ subject, body }) =>
+                  updateSelected({ subject, body })
+                }
+                trigger={
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs text-primary"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Write with AI
+                  </Button>
+                }
+              />
+            </div>
             <Textarea
               rows={10}
               value={selected.body}
@@ -507,7 +549,7 @@ export function SequenceBuilder({
             />
             <p className="text-xs text-muted-foreground">
               Use {"{{firstName}}"} merge fields and {"{spin|tax}"} for
-              variation.
+              variation. Remember to Save after editing.
             </p>
           </div>
 

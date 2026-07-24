@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/dashboard/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus } from "lucide-react";
 import { CampaignRowActions } from "./campaign-row-actions";
 
 const statusVariant: Record<
@@ -30,27 +30,20 @@ export default async function CampaignsPage() {
         title="Campaigns"
         description="Design multi-step sequences, run the pre-send spam check, and launch."
         action={
-          <div className="flex gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/designer">
-                <Sparkles className="h-4 w-4" />
-                AI Designer
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/campaigns/new">
-                <Plus className="h-4 w-4" />
-                New campaign
-              </Link>
-            </Button>
-          </div>
+          <Button asChild>
+            <Link href="/campaigns/new">
+              <Plus className="h-4 w-4" />
+              New campaign
+            </Link>
+          </Button>
         }
       />
 
       {rows.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center text-sm text-muted-foreground">
-            No campaigns yet. Start from scratch or use the AI Designer.
+            No campaigns yet. Create one — you can write the emails yourself
+            or generate them with AI.
           </CardContent>
         </Card>
       ) : (

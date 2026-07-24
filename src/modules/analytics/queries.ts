@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  messages,
   messageEvents,
   campaigns,
   sendingDomains,
@@ -99,6 +100,65 @@ export async function funnelStageTotals(orgId: string) {
     const converted = row?.converted ?? 0;
     return { stage, entered, converted, rate: rate(converted, entered) };
   });
+}
+
+export interface ReplyBreakdown {
+  /** Distinct leads that received at least one sent email. */
+  contacted: number;
+  /** Distinct leads that replied at least once. */
+  replied: number;
+  /** contacted − replied (floored at 0). */
+  noReply: number;
+  /** AI-classified sentiment of inbound replies (per reply, not per lead). */
+  sentiment: {
+    positive: number;
+    neutral: number;
+    negative: number;
+    unclassified: number;
+  };
+}
+
+/** Replied vs no-reply lead counts + AI sentiment breakdown of replies. */
+export async function replyBreakdown(orgId: string): Promise<ReplyBreakdown> {
+  const [contactedRow] = await db
+    .select({ n: sql<number>`count(distinct ${messages.leadId})::int` })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.orgId, orgId),
+        eq(messages.direction, "outbound"),
+        eq(messages.status, "sent")
+      )
+    );
+
+  const [repliedRow] = await db
+    .select({ n: sql<number>`count(distinct ${messages.leadId})::int` })
+    .from(messages)
+    .where(and(eq(messages.orgId, orgId), eq(messages.direction, "inbound")));
+
+  const sentimentRows = await db
+    .select({
+      sentiment: messages.sentiment,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(messages)
+    .where(and(eq(messages.orgId, orgId), eq(messages.direction, "inbound")))
+    .groupBy(messages.sentiment);
+
+  const sentiment = { positive: 0, neutral: 0, negative: 0, unclassified: 0 };
+  for (const r of sentimentRows) {
+    if (r.sentiment) sentiment[r.sentiment] = r.n;
+    else sentiment.unclassified = r.n;
+  }
+
+  const contacted = contactedRow?.n ?? 0;
+  const replied = repliedRow?.n ?? 0;
+  return {
+    contacted,
+    replied,
+    noReply: Math.max(0, contacted - replied),
+    sentiment,
+  };
 }
 
 /** Domain health scorecard rows. */

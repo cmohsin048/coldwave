@@ -4,6 +4,7 @@ import {
   campaignPerformance,
   domainScorecard,
   funnelStageTotals,
+  replyBreakdown,
   rate,
 } from "@/modules/analytics/queries";
 import { PageHeader } from "@/components/dashboard/page-header";
@@ -20,15 +21,24 @@ import {
 } from "@/components/ui/table";
 import { FunnelChart } from "./funnel-chart";
 import { formatNumber, formatPercent } from "@/lib/utils";
-import { MailCheck, Eye, MousePointerClick, Reply } from "lucide-react";
+import {
+  MailCheck,
+  Eye,
+  MousePointerClick,
+  Reply,
+  MailX,
+  ThumbsUp,
+  ThumbsDown,
+} from "lucide-react";
 
 export default async function AnalyticsPage() {
   const ctx = await requireOrgContext();
-  const [totals, perf, domains, stages] = await Promise.all([
+  const [totals, perf, domains, stages, repliesInfo] = await Promise.all([
     orgEventTotals(ctx.orgId),
     campaignPerformance(ctx.orgId),
     domainScorecard(ctx.orgId),
     funnelStageTotals(ctx.orgId),
+    replyBreakdown(ctx.orgId),
   ]);
 
   const funnelData = [
@@ -69,6 +79,39 @@ export default async function AnalyticsPage() {
           value={formatPercent(rate(totals.reply, totals.sent))}
           icon={Reply}
           hint={`${formatNumber(totals.reply)} replies`}
+        />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Leads replied"
+          value={formatNumber(repliesInfo.replied)}
+          icon={Reply}
+          hint={`of ${formatNumber(repliesInfo.contacted)} contacted (${formatPercent(
+            rate(repliesInfo.replied, repliesInfo.contacted)
+          )})`}
+        />
+        <StatCard
+          title="No reply yet"
+          value={formatNumber(repliesInfo.noReply)}
+          icon={MailX}
+          hint="Contacted leads without a reply"
+        />
+        <StatCard
+          title="Positive replies"
+          value={formatNumber(repliesInfo.sentiment.positive)}
+          icon={ThumbsUp}
+          hint={`${formatNumber(repliesInfo.sentiment.neutral)} neutral${
+            repliesInfo.sentiment.unclassified
+              ? ` · ${formatNumber(repliesInfo.sentiment.unclassified)} unclassified`
+              : ""
+          }`}
+        />
+        <StatCard
+          title="Negative replies"
+          value={formatNumber(repliesInfo.sentiment.negative)}
+          icon={ThumbsDown}
+          hint="AI-classified from reply content"
         />
       </div>
 

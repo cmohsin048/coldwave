@@ -74,7 +74,7 @@ export default async function DashboardPage() {
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>1. Connect a mailbox and start warmup (Mailboxes → Warmup).</p>
             <p>2. Generate leads from Apollo (Leads → New search).</p>
-            <p>3. Design a campaign with the AI Designer.</p>
+            <p>3. Create a campaign and design the sequence (write or AI-generate emails).</p>
             <p>4. Run the pre-send spam check, then launch.</p>
           </CardContent>
         </Card>

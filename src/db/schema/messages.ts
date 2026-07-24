@@ -12,6 +12,7 @@ import {
   messageDirection,
   messageStatus,
   eventType,
+  replySentiment,
 } from "./enums";
 import { organizations } from "./orgs";
 import {
@@ -68,6 +69,10 @@ export const messages = pgTable(
     // Spam engine result at send time.
     spamScore: real("spam_score"),
     spamReport: jsonb("spam_report").$type<Record<string, unknown>>(),
+
+    // AI reply analysis (inbound only): tone + one-line gist of the reply.
+    sentiment: replySentiment("sentiment"),
+    sentimentSummary: text("sentiment_summary"),
 
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
     sentAt: timestamp("sent_at", { withTimezone: true }),

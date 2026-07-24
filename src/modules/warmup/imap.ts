@@ -1,4 +1,5 @@
 import { ImapFlow } from "imapflow";
+import { simpleParser } from "mailparser";
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -11,6 +12,7 @@ import {
   type WarmupConfig,
 } from "@/db/schema";
 import { openSecrets } from "@/modules/mailboxes/credentials";
+import { classifyReplySentiment } from "@/modules/ai/openai";
 import { pauseOnReply } from "@/modules/campaigns/scheduler";
 import { bumpVariantCounter } from "@/modules/campaigns/variants";
 import {
@@ -79,21 +81,33 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
   try {
     const lock = await client.getMailboxLock("INBOX");
     try {
-      // Look at mail from the last 2 days.
+      // Look at mail from the last 2 days. Phase 1 only lists envelopes —
+      // imapflow can't run other commands (like body downloads) while the
+      // fetch generator is active, so bodies are downloaded in phase 2.
       const since = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-      for await (const msg of client.fetch(
-        { since },
-        { envelope: true, headers: ["in-reply-to", "references"] }
-      )) {
+      const candidates: Array<{
+        seq: number;
+        fromEmail: string;
+        subject: string;
+        messageId?: string;
+      }> = [];
+      for await (const msg of client.fetch({ since }, { envelope: true })) {
         const from = msg.envelope?.from?.[0]?.address;
         if (!from) continue;
-        const fromEmail = normalizeEmail(from);
+        candidates.push({
+          seq: msg.seq,
+          fromEmail: normalizeEmail(from),
+          subject: msg.envelope?.subject ?? "(reply)",
+          messageId: msg.envelope?.messageId ?? undefined,
+        });
+      }
 
+      for (const cand of candidates) {
         // Is the sender a lead we have an active enrollment for?
         const lead = await db.query.leads.findFirst({
           where: and(
             eq(leads.orgId, mailbox.orgId),
-            eq(leads.email, fromEmail)
+            eq(leads.email, cand.fromEmail)
           ),
         });
         if (!lead) continue;
@@ -107,14 +121,47 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
           ),
         });
 
-        // Record inbound message (dedupe by envelope messageId).
-        const messageId = msg.envelope?.messageId ?? undefined;
-        const existing = messageId
+        // Dedupe by envelope messageId.
+        const existing = cand.messageId
           ? await db.query.messages.findFirst({
-              where: eq(messages.messageIdHeader, messageId),
+              where: eq(messages.messageIdHeader, cand.messageId),
             })
           : null;
         if (existing) continue;
+
+        // Download + parse the reply body (for the inbox and AI analysis).
+        let bodyText = "";
+        try {
+          const dl = await client.download(String(cand.seq));
+          if (dl?.content) {
+            const parsed = await simpleParser(dl.content);
+            bodyText = extractReplyText(parsed.text ?? "");
+          }
+        } catch (err) {
+          logger.warn("reply body download failed", {
+            mailbox: mailbox.email,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+
+        // AI sentiment classification — best-effort: without an OpenAI key
+        // (or on API errors) the reply is stored unclassified.
+        let sentiment: "positive" | "neutral" | "negative" | null = null;
+        let sentimentSummary: string | null = null;
+        if (bodyText) {
+          try {
+            const c = await classifyReplySentiment({
+              subject: cand.subject,
+              body: bodyText,
+            });
+            sentiment = c.sentiment;
+            sentimentSummary = c.summary;
+          } catch (err) {
+            logger.warn("reply sentiment classification failed", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
 
         await db.insert(messages).values({
           orgId: mailbox.orgId,
@@ -123,10 +170,13 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
           campaignId: outbound?.campaignId,
           leadId: lead.id,
           mailboxId: mailbox.id,
-          fromEmail,
+          fromEmail: cand.fromEmail,
           toEmail: mailbox.email,
-          subject: msg.envelope?.subject ?? "(reply)",
-          messageIdHeader: messageId,
+          subject: cand.subject,
+          body: bodyText || null,
+          sentiment,
+          sentimentSummary,
+          messageIdHeader: cand.messageId,
         });
 
         await db.insert(messageEvents).values({
@@ -158,6 +208,23 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
     await client.logout().catch(() => {});
   }
   return found;
+}
+
+/**
+ * Reduce a raw reply to the lead's own words: strip quoted lines, the
+ * "On ... wrote:" attribution, and the signature delimiter onward.
+ */
+function extractReplyText(raw: string): string {
+  const lines = raw.split(/\r?\n/);
+  const kept: string[] = [];
+  for (const line of lines) {
+    if (/^\s*>/.test(line)) continue; // quoted text
+    if (/^\s*On .{5,200}wrote:\s*$/.test(line)) break; // reply attribution
+    if (/^\s*-{2,3}\s*$/.test(line)) break; // signature delimiter
+    if (/^\s*-+\s*Original Message\s*-+/i.test(line)) break;
+    kept.push(line);
+  }
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 8000);
 }
 
 /**

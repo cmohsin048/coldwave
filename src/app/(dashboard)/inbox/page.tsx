@@ -4,7 +4,17 @@ import { messages, leads } from "@/db/schema";
 import { requireOrgContext } from "@/lib/tenant";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ReplyAssist } from "./reply-assist";
+
+const sentimentBadge: Record<
+  string,
+  { label: string; variant: "success" | "secondary" | "danger" }
+> = {
+  positive: { label: "Positive", variant: "success" },
+  neutral: { label: "Neutral", variant: "secondary" },
+  negative: { label: "Negative", variant: "danger" },
+};
 
 export default async function InboxPage() {
   const ctx = await requireOrgContext();
@@ -14,6 +24,9 @@ export default async function InboxPage() {
       id: messages.id,
       fromEmail: messages.fromEmail,
       subject: messages.subject,
+      body: messages.body,
+      sentiment: messages.sentiment,
+      sentimentSummary: messages.sentimentSummary,
       createdAt: messages.createdAt,
       leadName: leads.fullName,
       company: leads.companyName,
@@ -46,7 +59,14 @@ export default async function InboxPage() {
             <Card key={m.id}>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between text-base">
-                  <span>{m.leadName ?? m.fromEmail}</span>
+                  <span className="flex items-center gap-2">
+                    {m.leadName ?? m.fromEmail}
+                    {m.sentiment && sentimentBadge[m.sentiment] && (
+                      <Badge variant={sentimentBadge[m.sentiment]!.variant}>
+                        {sentimentBadge[m.sentiment]!.label}
+                      </Badge>
+                    )}
+                  </span>
                   <span className="text-xs font-normal text-muted-foreground">
                     {m.createdAt.toLocaleString()}
                   </span>
@@ -58,6 +78,16 @@ export default async function InboxPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <p className="text-sm font-medium">{m.subject}</p>
+                {m.sentimentSummary && (
+                  <p className="text-xs italic text-muted-foreground">
+                    AI: {m.sentimentSummary}
+                  </p>
+                )}
+                {m.body && (
+                  <p className="whitespace-pre-line rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
+                    {m.body.length > 600 ? `${m.body.slice(0, 600)}…` : m.body}
+                  </p>
+                )}
                 <ReplyAssist messageId={m.id} />
               </CardContent>
             </Card>
