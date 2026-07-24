@@ -20,11 +20,26 @@ export const updateOrgSettings = action(
   z.object({
     name: z.string().min(1).max(120),
     companyAddress: z.string().max(300).optional(),
+    notificationEmail: z
+      .union([z.literal(""), z.string().email("Notification email is invalid")])
+      .optional(),
+    replyNotificationMode: z.enum(["off", "positive_only", "all"]).optional(),
   }),
   async (input, ctx) => {
     await db
       .update(organizations)
-      .set({ name: input.name, companyAddress: input.companyAddress })
+      .set({
+        name: input.name,
+        companyAddress: input.companyAddress,
+        // Undefined → leave unchanged; "" → clear (fall back to owner email).
+        notificationEmail:
+          input.notificationEmail === undefined
+            ? undefined
+            : input.notificationEmail
+              ? normalizeEmail(input.notificationEmail)
+              : null,
+        replyNotificationMode: input.replyNotificationMode,
+      })
       .where(eq(organizations.id, ctx.orgId));
     revalidatePath("/settings");
     return { updated: true };

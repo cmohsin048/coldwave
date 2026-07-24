@@ -53,6 +53,8 @@ export default async function SettingsPage() {
   ]);
 
   const canManage = ctx.role === "owner" || ctx.role === "admin";
+  const ownerEmail =
+    members.find((m) => m.role === "owner")?.email ?? "";
 
   return (
     <div className="space-y-6">
@@ -69,6 +71,9 @@ export default async function SettingsPage() {
           <OrgForm
             name={org?.name ?? ""}
             companyAddress={org?.companyAddress ?? ""}
+            notificationEmail={org?.notificationEmail ?? ""}
+            replyNotificationMode={org?.replyNotificationMode ?? "positive_only"}
+            ownerEmail={ownerEmail}
           />
         </CardContent>
       </Card>

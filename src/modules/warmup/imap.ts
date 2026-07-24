@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { openSecrets } from "@/modules/mailboxes/credentials";
 import { classifyReplySentiment } from "@/modules/ai/openai";
+import { sendReplyAlert } from "@/modules/notifications/reply-alerts";
 import { pauseOnReply } from "@/modules/campaigns/scheduler";
 import { bumpVariantCounter } from "@/modules/campaigns/variants";
 import {
@@ -199,6 +200,17 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
 
         // Auto-pause the lead's sequence (or follow its replied-branch).
         await pauseOnReply(mailbox.orgId, lead.id);
+
+        // Alert the workspace per its notification settings (best-effort).
+        await sendReplyAlert({
+          orgId: mailbox.orgId,
+          lead,
+          campaignId: outbound?.campaignId,
+          subject: cand.subject,
+          replyText: bodyText || null,
+          sentiment,
+          sentimentSummary,
+        });
         found++;
       }
     } finally {
@@ -213,8 +225,9 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
 /**
  * Reduce a raw reply to the lead's own words: strip quoted lines, the
  * "On ... wrote:" attribution, and the signature delimiter onward.
+ * Exported for the e2e harness.
  */
-function extractReplyText(raw: string): string {
+export function extractReplyText(raw: string): string {
   const lines = raw.split(/\r?\n/);
   const kept: string[] = [];
   for (const line of lines) {

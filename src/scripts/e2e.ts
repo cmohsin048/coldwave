@@ -10,6 +10,7 @@ import {
   sequenceSteps,
   campaignEnrollments,
   messages,
+  messageEvents,
 } from "@/db/schema";
 
 // --- modules under test ---
@@ -382,6 +383,140 @@ async function main() {
       }
     } else {
       skipped("OpenAI live generation", "OPENAI_API_KEY empty");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  section("13. Reply pipeline: extraction, pause-on-reply, sentiment, alerts");
+  {
+    // Reply text extraction (pure).
+    const { extractReplyText } = await import("@/modules/warmup/imap");
+    const raw = [
+      "Sounds great, send over a calendar link.",
+      "",
+      "> original quoted line",
+      "On Mon, Jul 20, 2026 at 9:00 AM Alex <alex@example.com> wrote:",
+      "> earlier email body",
+      "--",
+      "Sam Lee | VP Sales | Acme",
+    ].join("\n");
+    const cleaned = extractReplyText(raw);
+    ok("reply extraction keeps the lead's words", cleaned.includes("Sounds great"));
+    ok(
+      "reply extraction strips quotes/attribution/signature",
+      !cleaned.includes("quoted") && !cleaned.includes("wrote:") && !cleaned.includes("VP Sales"),
+      cleaned
+    );
+
+    if (!orgId) {
+      skipped("reply pipeline DB tests", "no org from registration");
+    } else {
+      // Simulate what syncReplies records when a lead responds.
+      const { pauseOnReply } = await import("@/modules/campaigns/scheduler");
+      const [camp] = await db
+        .insert(campaigns)
+        .values({ orgId, name: "E2E Reply Campaign", status: "active" })
+        .returning();
+      const [step] = await db
+        .insert(sequenceSteps)
+        .values({
+          orgId, campaignId: camp!.id, type: "email", stage: "awareness",
+          order: 0, subject: "Hi {{firstName}}", body: "Hello",
+        })
+        .returning();
+      const [rlead] = await db
+        .insert(leads)
+        .values({ orgId, email: `replier_${stamp}@acme.com`, firstName: "Rae", status: "contacted" })
+        .returning();
+      const [enr] = await db
+        .insert(campaignEnrollments)
+        .values({ orgId, campaignId: camp!.id, leadId: rlead!.id, status: "active", currentStepId: step!.id })
+        .returning();
+      const [outMsg] = await db
+        .insert(messages)
+        .values({
+          orgId, direction: "outbound", status: "sent", campaignId: camp!.id,
+          stepId: step!.id, enrollmentId: enr!.id, leadId: rlead!.id,
+          fromEmail: "sender@example.com", toEmail: rlead!.email,
+          subject: "Hi Rae", body: "Hello", sentAt: new Date(),
+        })
+        .returning();
+      await db.insert(messages).values({
+        orgId, direction: "inbound", status: "replied", campaignId: camp!.id,
+        leadId: rlead!.id, fromEmail: rlead!.email, toEmail: "sender@example.com",
+        subject: "Re: Hi Rae", body: "Sounds great, let's talk.",
+        sentiment: "positive", sentimentSummary: "Interested, wants to talk.",
+      });
+      await db.insert(messageEvents).values({
+        orgId, messageId: outMsg!.id, campaignId: camp!.id, leadId: rlead!.id, type: "reply",
+      });
+
+      await pauseOnReply(orgId, rlead!.id);
+      const after = await db.query.campaignEnrollments.findFirst({
+        where: eq(campaignEnrollments.id, enr!.id),
+      });
+      ok("enrollment auto-pauses as 'replied' after a reply", after?.status === "replied", after?.status);
+
+      // Alert gating (no real email is sent on these paths).
+      const { sendReplyAlert } = await import("@/modules/notifications/reply-alerts");
+      await db.update(organizations)
+        .set({ replyNotificationMode: "off" })
+        .where(eq(organizations.id, orgId));
+      const offRes = await sendReplyAlert({
+        orgId, lead: rlead!, campaignId: camp!.id, subject: "Re: Hi",
+        replyText: "Yes!", sentiment: "positive", sentimentSummary: null,
+      });
+      ok("alert mode 'off' suppresses alerts", offRes === false);
+
+      await db.update(organizations)
+        .set({ replyNotificationMode: "positive_only" })
+        .where(eq(organizations.id, orgId));
+      const neuRes = await sendReplyAlert({
+        orgId, lead: rlead!, campaignId: camp!.id, subject: "Re: Hi",
+        replyText: "Who is this?", sentiment: "neutral", sentimentSummary: null,
+      });
+      ok("'positive_only' skips neutral replies", neuRes === false);
+      // Actual delivery of a positive alert is covered by
+      // src/scripts/test-reply-alert.ts (sends a real email via SYSTEM_SMTP).
+    }
+
+    // Live AI sentiment classification.
+    if (process.env.OPENAI_API_KEY) {
+      const { classifyReplySentiment } = await import("@/modules/ai/openai");
+      try {
+        const pos = await classifyReplySentiment({
+          subject: "Re: Quick question",
+          body: "This looks great — let's book a call on Tuesday.",
+        });
+        ok("AI classifies interested reply as positive", pos.sentiment === "positive", pos.sentiment);
+        ok("AI produces a one-line summary", (pos.summary ?? "").length > 0);
+        const neg = await classifyReplySentiment({
+          subject: "Re: Quick question",
+          body: "Not interested. Remove me from your list and do not contact me again.",
+        });
+        ok("AI classifies rejection as negative", neg.sentiment === "negative", neg.sentiment);
+      } catch (e) {
+        ok("AI sentiment classification", false, (e as Error).message);
+      }
+    } else {
+      skipped("AI sentiment classification", "OPENAI_API_KEY empty");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  section("14. Analytics: reply breakdown + event totals (DB)");
+  {
+    if (!orgId) {
+      skipped("analytics tests", "no org");
+    } else {
+      const { replyBreakdown, orgEventTotals } = await import("@/modules/analytics/queries");
+      const rb = await replyBreakdown(orgId);
+      ok("contacted counts distinct leads with sent mail", rb.contacted === 1, `contacted=${rb.contacted}`);
+      ok("replied counts distinct leads with inbound mail", rb.replied === 1, `replied=${rb.replied}`);
+      ok("positive reply sentiment counted", rb.sentiment.positive === 1, JSON.stringify(rb.sentiment));
+      ok("noReply = contacted − replied", rb.noReply === 0, `noReply=${rb.noReply}`);
+      const totals = await orgEventTotals(orgId);
+      ok("reply event counted in org totals", totals.reply === 1, `reply=${totals.reply}`);
     }
   }
 

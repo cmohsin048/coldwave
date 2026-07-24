@@ -6,7 +6,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { primaryId, timestamps } from "./_helpers";
-import { orgRole } from "./enums";
+import { orgRole, replyNotificationMode } from "./enums";
 import { users } from "./auth";
 
 /**
@@ -20,6 +20,12 @@ export const organizations = pgTable("organization", {
   slug: text("slug").notNull().unique(),
   // CAN-SPAM physical postal address included in every campaign footer.
   companyAddress: text("company_address"),
+  // Reply alerts: where to send them (falls back to the owner's login email)
+  // and which replies warrant one.
+  notificationEmail: text("notification_email"),
+  replyNotificationMode: replyNotificationMode("reply_notification_mode")
+    .notNull()
+    .default("positive_only"),
   ...timestamps,
 });
 

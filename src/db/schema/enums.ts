@@ -118,6 +118,13 @@ export const replySentiment = pgEnum("reply_sentiment", [
   "negative",
 ]);
 
+/** When to email the workspace's notification address about lead replies. */
+export const replyNotificationMode = pgEnum("reply_notification_mode", [
+  "off",
+  "positive_only",
+  "all",
+]);
+
 export const suppressionScope = pgEnum("suppression_scope", [
   "global",
   "campaign",
