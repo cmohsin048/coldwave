@@ -46,6 +46,55 @@ export const searchIndustries = action(
 );
 
 /**
+ * Turn a plain-English targeting prompt into Apollo search filters via AI.
+ * Industries the AI proposes are validated against Apollo's taxonomy — terms
+ * with no taxonomy match are demoted to free-text keywords so the search
+ * still honors them instead of silently filtering on a non-existent industry.
+ */
+export const aiPlanApolloSearch = action(
+  z.object({ prompt: z.string().min(10).max(1000) }),
+  async (input) => {
+    const { planLeadSearch } = await import("@/modules/ai/openai");
+    const plan = await planLeadSearch(input.prompt);
+
+    const apollo = getApolloClient();
+    const industries: string[] = [];
+    const unmatched: string[] = [];
+    for (const candidate of plan.industries.slice(0, 6)) {
+      try {
+        const tags = await apollo.searchIndustryTags(candidate);
+        const name = tags
+          .filter((t) => t.kind === "linkedin_industry")
+          .map((t) => (t.cleaned_name ?? t.display_name ?? "").toLowerCase())
+          .find(Boolean);
+        if (name && !industries.includes(name)) industries.push(name);
+        else unmatched.push(candidate);
+      } catch {
+        unmatched.push(candidate);
+      }
+    }
+
+    const keywords = [plan.keywords, ...unmatched]
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(", ");
+
+    return {
+      listName: plan.listName.slice(0, 120),
+      filters: {
+        personTitles: plan.personTitles,
+        seniorities: plan.seniorities,
+        industries,
+        locations: plan.locations,
+        employeeRanges: plan.employeeRanges,
+        technologies: plan.technologies,
+        keywords: keywords || undefined,
+      },
+    };
+  }
+);
+
+/**
  * Preview an Apollo people search WITHOUT importing (no email reveal / credit
  * spend). Returns a lightweight sample for the filter UI.
  */

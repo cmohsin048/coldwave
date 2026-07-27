@@ -240,6 +240,126 @@ export async function classifyReplySentiment(params: {
   return parsed;
 }
 
+/** AI-planned Apollo people-search filters from a plain-English prompt. */
+export interface LeadSearchPlan {
+  listName: string;
+  personTitles: string[];
+  seniorities: string[];
+  industries: string[];
+  locations: string[];
+  employeeRanges: string[];
+  technologies: string[];
+  keywords: string;
+}
+
+const SENIORITY_VALUES = [
+  "owner", "founder", "c_suite", "partner", "vp", "head",
+  "director", "manager", "senior", "entry", "intern",
+];
+const EMPLOYEE_RANGE_VALUES = [
+  "1,10", "11,20", "21,50", "51,100", "101,200", "201,500",
+  "501,1000", "1001,2000", "2001,5000", "5001,10000", "10001,1000000",
+];
+
+const leadSearchJsonSchema = {
+  name: "lead_search_plan",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "listName",
+      "personTitles",
+      "seniorities",
+      "industries",
+      "locations",
+      "employeeRanges",
+      "technologies",
+      "keywords",
+    ],
+    properties: {
+      listName: {
+        type: "string",
+        description:
+          "Short descriptive list name, e.g. 'Trucking company owners — Texas'.",
+      },
+      personTitles: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Job titles the person holds (usually the strongest filter).",
+      },
+      seniorities: {
+        type: "array",
+        items: { type: "string", enum: SENIORITY_VALUES },
+      },
+      industries: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Broad industry names (e.g. 'logistics & supply chain'). Niche terms that aren't a recognized industry belong in keywords.",
+      },
+      locations: {
+        type: "array",
+        items: { type: "string" },
+        description: "Countries, states/regions, or cities.",
+      },
+      employeeRanges: {
+        type: "array",
+        items: { type: "string", enum: EMPLOYEE_RANGE_VALUES },
+        description: "Company headcount ranges as 'min,max' strings.",
+      },
+      technologies: {
+        type: "array",
+        items: { type: "string" },
+        description: "Tools/tech the company must use, only if stated.",
+      },
+      keywords: {
+        type: "string",
+        description:
+          "Free-text terms for niches that aren't a title or industry. Empty string if none.",
+      },
+    },
+  },
+} as const;
+
+/**
+ * Translate a plain-English description of a target audience into Apollo
+ * people-search filters. Only filters clearly implied by the prompt are set —
+ * empty beats guessed.
+ */
+export async function planLeadSearch(prompt: string): Promise<LeadSearchPlan> {
+  const openai = getOpenAI();
+  const model = getEnv().OPENAI_MODEL;
+
+  const raw = await withRetry(
+    async () => {
+      const completion = await openai.chat.completions.create({
+        model,
+        temperature: 0.2,
+        response_format: {
+          type: "json_schema",
+          json_schema: leadSearchJsonSchema,
+        },
+        messages: [
+          {
+            role: "system",
+            content:
+              "You translate a plain-English description of a cold-outreach target audience into people-search filters. Fill only what the description clearly implies — an empty array is better than a guess. Job titles are the strongest filter: include common synonyms (e.g. 'owner' also 'president', 'proprietor'). Use broad, recognizable industry names; niche phrasing goes in keywords. If company size is implied ('small businesses' → 1,10 and 11,20), map it to the allowed ranges.",
+          },
+          { role: "user", content: prompt },
+        ],
+      });
+      const content = completion.choices[0]?.message?.content;
+      if (!content) throw new Error("OpenAI returned empty content");
+      return content;
+    },
+    { label: "openai-lead-search", retries: 3, baseDelayMs: 1000 }
+  );
+
+  return JSON.parse(raw) as LeadSearchPlan;
+}
+
 /** Suggest a reply to an inbound message (unified inbox assist). */
 export async function suggestReply(params: {
   threadContext: string;

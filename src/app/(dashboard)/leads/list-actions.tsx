@@ -38,9 +38,11 @@ export function ListSwitcher({
 
   const active = lists.find((l) => l.id === activeListId);
 
+  // "All leads" keeps the table view via ?list=all — a bare /leads shows the
+  // lists overview cards instead.
   function go(listId?: string) {
     setOpen(false);
-    router.push(listId ? `/leads?list=${listId}` : "/leads");
+    router.push(listId ? `/leads?list=${listId}` : "/leads?list=all");
   }
 
   function removeList(target: ListInfo) {
