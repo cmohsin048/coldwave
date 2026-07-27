@@ -34,6 +34,12 @@ export interface ReplyAlertArgs {
   replyText: string | null;
   sentiment: "positive" | "neutral" | "negative" | null;
   sentimentSummary: string | null;
+  /**
+   * Who produced the sentiment: the AI classifier (default) or the keyword
+   * fallback used when the AI is unavailable. Keyword verdicts are surfaced
+   * as "needs review" in the alert.
+   */
+  classifiedBy?: "ai" | "keyword" | null;
 }
 
 /** Resolve who should receive alerts: explicit setting, else the org owner. */
@@ -100,13 +106,17 @@ export async function sendReplyAlert(args: ReplyAlertArgs): Promise<boolean> {
     const leadLine = [leadName, lead.title, lead.companyName]
       .filter(Boolean)
       .join(" — ");
+    const keywordMatch = args.classifiedBy === "keyword";
     const sentimentLabel = args.sentiment
-      ? SENTIMENT_LABEL[args.sentiment]
+      ? SENTIMENT_LABEL[args.sentiment] +
+        (keywordMatch ? " (keyword match — AI unavailable, needs review)" : "")
       : "Unclassified";
 
     const subject =
       args.sentiment === "positive"
-        ? `🎯 Positive reply from ${leadName}`
+        ? keywordMatch
+          ? `🎯 Possible positive reply from ${leadName} (needs review)`
+          : `🎯 Positive reply from ${leadName}`
         : `New reply from ${leadName}`;
 
     const lines = [

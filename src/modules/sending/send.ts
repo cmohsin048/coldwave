@@ -24,6 +24,7 @@ import {
   bumpVariantCounter,
   maybeSelectWinner,
 } from "@/modules/campaigns/variants";
+import { ensureLeadIcebreaker } from "@/modules/ai/icebreaker";
 import { emailDomain, normalizeEmail } from "@/lib/utils";
 
 export interface SendStepArgs {
@@ -66,15 +67,35 @@ export async function sendSequenceStep(
     return { status: "skipped", reason: "suppressed" };
   }
 
+  // Deliverability: invalid/disposable addresses bounce, and bounces burn the
+  // sending domain's reputation for every other lead. Hard-skip them.
+  if (
+    lead.verification === "invalid" ||
+    lead.verification === "disposable"
+  ) {
+    return { status: "skipped", reason: `verification:${lead.verification}` };
+  }
+
   const org = await db.query.organizations.findFirst({
     where: eq(organizations.id, args.orgId),
   });
 
   // Render subject/body (merge fields + spintax) with a per-recipient seed.
   const ctx = mergeContext(lead);
+
+  // {{icebreaker}}: AI-personalized opening line, generated once per lead and
+  // cached on it. Empty on failure — the field renders blank and we still send.
+  if (
+    !ctx.icebreaker &&
+    /\{\{\s*icebreaker\s*\}\}/.test(args.subjectTemplate + args.bodyTemplate)
+  ) {
+    ctx.icebreaker = await ensureLeadIcebreaker(lead);
+  }
+
   const seed = `${lead.id}:${args.stepId}`;
   const subject = render(args.subjectTemplate, ctx, seed);
-  let text = render(args.bodyTemplate, ctx, seed);
+  // Trim leading blank lines left by an empty icebreaker fallback.
+  let text = render(args.bodyTemplate, ctx, seed).replace(/^\s+/, "");
 
   // CAN-SPAM footer (physical address + unsubscribe).
   const unsub = {

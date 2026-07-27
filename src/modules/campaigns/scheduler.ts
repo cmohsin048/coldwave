@@ -341,6 +341,19 @@ export async function processEnrollmentStep(enrollmentId: string): Promise<void>
     return;
   }
 
+  // Unsendable address (invalid/disposable): every step would skip the same
+  // way, so fail the enrollment now instead of walking the whole sequence.
+  if (
+    outcome.status === "skipped" &&
+    outcome.reason.startsWith("verification:")
+  ) {
+    await db
+      .update(campaignEnrollments)
+      .set({ status: "failed", lastStepAt: new Date() })
+      .where(eq(campaignEnrollments.id, enrollmentId));
+    return;
+  }
+
   await advance(enrollment, current, steps);
 }
 

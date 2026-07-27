@@ -521,6 +521,138 @@ async function main() {
   }
 
   // ---------------------------------------------------------------------------
+  section("15. Hardening: keyword fallback, bot-open filter, verification gate, reclassify sweep");
+  {
+    // Keyword sentiment fallback (pure).
+    const { keywordClassifyReply } = await import("@/modules/ai/keyword-sentiment");
+    ok(
+      "keyword: buying signal → positive",
+      keywordClassifyReply({ subject: "Re: Hi", body: "Sounds great, let's book a call." })?.sentiment === "positive"
+    );
+    ok(
+      "keyword: 'not interested' → negative (not positive)",
+      keywordClassifyReply({ subject: "Re: Hi", body: "I'm not interested, remove me." })?.sentiment === "negative"
+    );
+    ok(
+      "keyword: out-of-office → neutral",
+      keywordClassifyReply({ subject: "Automatic reply", body: "I am out of office until Monday." })?.sentiment === "neutral"
+    );
+    ok(
+      "keyword: ambiguous reply stays unclassified",
+      keywordClassifyReply({ subject: "Re: Hi", body: "Who gave you this address?" }) === null
+    );
+
+    if (!orgId) {
+      skipped("hardening DB tests", "no org");
+    } else {
+      // Verification gate: invalid/disposable leads never reach SMTP.
+      const { sendSequenceStep } = await import("@/modules/sending/send");
+      const [badLead] = await db
+        .insert(leads)
+        .values({ orgId, email: `bogus_${stamp}@acme.com`, firstName: "Bogus", status: "new", verification: "invalid" })
+        .returning();
+      const fakeMailbox = {
+        id: "mbx_fake2", orgId, email: "sender@example.com", fromName: "S",
+        provider: "smtp" as const, status: "active" as const, domainId: null,
+        smtpHost: "localhost", smtpPort: 587, smtpSecure: false,
+        imapHost: null, imapPort: null, imapSecure: true,
+        encryptedCredentials: sealSecrets({ smtpPass: "x" }),
+        dailySendLimit: 40, hourlySendLimit: 10, minDelaySeconds: 30, maxDelaySeconds: 180,
+        sentToday: 0, lastSentAt: null, lastError: null,
+        createdAt: new Date(), updatedAt: new Date(),
+      };
+      const gate = await sendSequenceStep({
+        orgId, campaignId: "c", stepId: "s", enrollmentId: "e", leadId: badLead!.id,
+        mailbox: fakeMailbox, subjectTemplate: "Hi", bodyTemplate: "Hello",
+        trackOpens: false, trackClicks: false,
+      });
+      ok(
+        "invalid-verification lead is skipped before sending",
+        gate.status === "skipped" && gate.reason === "verification:invalid",
+        JSON.stringify(gate)
+      );
+
+      // Bot-open filter: scanner UAs and instant hits don't become events.
+      const { recordTrackingHit } = await import("@/modules/tracking/record");
+      const { trackingTokens } = await import("@/db/schema");
+      const [trackedMsg] = await db
+        .insert(messages)
+        .values({
+          orgId, direction: "outbound", status: "sent",
+          fromEmail: "sender@example.com", toEmail: `open_${stamp}@acme.com`,
+          subject: "T", body: "B", sentAt: new Date(Date.now() - 60 * 60 * 1000),
+        })
+        .returning();
+      const eventCount = async (id: string) => {
+        const rows = await db
+          .select({ id: messageEvents.id })
+          .from(messageEvents)
+          .where(eq(messageEvents.messageId, id));
+        return rows.length;
+      };
+      await db.insert(trackingTokens).values({
+        token: `e2ebot_${stamp}`, orgId, messageId: trackedMsg!.id, kind: "open",
+      });
+      await recordTrackingHit(`e2ebot_${stamp}`, {
+        userAgent: "Mozilla/5.0 (compatible; barracuda scanner bot)",
+      });
+      ok("scanner user-agent open records no event", (await eventCount(trackedMsg!.id)) === 0);
+
+      const [instantMsg] = await db
+        .insert(messages)
+        .values({
+          orgId, direction: "outbound", status: "sent",
+          fromEmail: "sender@example.com", toEmail: `open2_${stamp}@acme.com`,
+          subject: "T", body: "B", sentAt: new Date(),
+        })
+        .returning();
+      await db.insert(trackingTokens).values({
+        token: `e2efast_${stamp}`, orgId, messageId: instantMsg!.id, kind: "open",
+      });
+      await recordTrackingHit(`e2efast_${stamp}`, {
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      });
+      ok("instant (prefetch-window) open records no event", (await eventCount(instantMsg!.id)) === 0);
+
+      await db.insert(trackingTokens).values({
+        token: `e2ehuman_${stamp}`, orgId, messageId: trackedMsg!.id, kind: "open",
+      });
+      await recordTrackingHit(`e2ehuman_${stamp}`, {
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      });
+      const afterHuman = await db.query.messages.findFirst({
+        where: eq(messages.id, trackedMsg!.id),
+      });
+      ok("human open still records event + status", (await eventCount(trackedMsg!.id)) === 1 && afterHuman?.status === "opened");
+
+      // Reclassification sweep: unclassified inbound replies get upgraded.
+      if (process.env.OPENAI_API_KEY) {
+        const { reclassifyReplies } = await import("@/modules/notifications/reclassify-replies");
+        // Alerts stay quiet for this org while the sweep runs.
+        await db.update(organizations)
+          .set({ replyNotificationMode: "off" })
+          .where(eq(organizations.id, orgId));
+        const [unclassified] = await db
+          .insert(messages)
+          .values({
+            orgId, direction: "inbound", status: "replied",
+            fromEmail: `sweep_${stamp}@acme.com`, toEmail: "sender@example.com",
+            subject: "Re: Hi", body: "Yes, very interested — send pricing please.",
+          })
+          .returning();
+        await reclassifyReplies({ batchSize: 5 });
+        const swept = await db.query.messages.findFirst({
+          where: eq(messages.id, unclassified!.id),
+        });
+        ok("sweep classifies previously-unclassified reply", swept?.sentiment === "positive", swept?.sentiment ?? "null");
+        ok("sweep with alerts off leaves replyAlertSentAt unset", swept?.replyAlertSentAt == null);
+      } else {
+        skipped("reclassification sweep", "OPENAI_API_KEY empty");
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   section("Cleanup");
   {
     if (orgId) {

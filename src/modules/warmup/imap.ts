@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import { openSecrets } from "@/modules/mailboxes/credentials";
 import { classifyReplySentiment } from "@/modules/ai/openai";
+import { keywordClassifyReply } from "@/modules/ai/keyword-sentiment";
 import { sendReplyAlert } from "@/modules/notifications/reply-alerts";
 import { pauseOnReply } from "@/modules/campaigns/scheduler";
 import { bumpVariantCounter } from "@/modules/campaigns/variants";
@@ -146,9 +147,11 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
         }
 
         // AI sentiment classification — best-effort: without an OpenAI key
-        // (or on API errors) the reply is stored unclassified.
+        // (or on API errors) the reply is stored unclassified and the
+        // reclassification sweep retries it later.
         let sentiment: "positive" | "neutral" | "negative" | null = null;
         let sentimentSummary: string | null = null;
+        let classifiedBy: "ai" | "keyword" | null = null;
         if (bodyText) {
           try {
             const c = await classifyReplySentiment({
@@ -157,28 +160,40 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
             });
             sentiment = c.sentiment;
             sentimentSummary = c.summary;
+            classifiedBy = "ai";
           } catch (err) {
             logger.warn("reply sentiment classification failed", {
               error: err instanceof Error ? err.message : String(err),
             });
           }
         }
+        // AI failed → keyword fallback, for ALERTING only. The message row
+        // stays unclassified (sentiment column is AI-only) so the sweep can
+        // still upgrade it, but an obvious buying signal alerts immediately
+        // instead of silently missing the org's positive_only window.
+        const keywordFallback =
+          !classifiedBy && bodyText
+            ? keywordClassifyReply({ subject: cand.subject, body: bodyText })
+            : null;
 
-        await db.insert(messages).values({
-          orgId: mailbox.orgId,
-          direction: "inbound",
-          status: "replied",
-          campaignId: outbound?.campaignId,
-          leadId: lead.id,
-          mailboxId: mailbox.id,
-          fromEmail: cand.fromEmail,
-          toEmail: mailbox.email,
-          subject: cand.subject,
-          body: bodyText || null,
-          sentiment,
-          sentimentSummary,
-          messageIdHeader: cand.messageId,
-        });
+        const [inbound] = await db
+          .insert(messages)
+          .values({
+            orgId: mailbox.orgId,
+            direction: "inbound",
+            status: "replied",
+            campaignId: outbound?.campaignId,
+            leadId: lead.id,
+            mailboxId: mailbox.id,
+            fromEmail: cand.fromEmail,
+            toEmail: mailbox.email,
+            subject: cand.subject,
+            body: bodyText || null,
+            sentiment,
+            sentimentSummary,
+            messageIdHeader: cand.messageId,
+          })
+          .returning({ id: messages.id });
 
         await db.insert(messageEvents).values({
           orgId: mailbox.orgId,
@@ -202,15 +217,25 @@ async function syncMailboxReplies(mailbox: Mailbox): Promise<number> {
         await pauseOnReply(mailbox.orgId, lead.id);
 
         // Alert the workspace per its notification settings (best-effort).
-        await sendReplyAlert({
+        // Record a sent alert on the message so the reclassification sweep
+        // never alerts a second time for the same reply.
+        const alerted = await sendReplyAlert({
           orgId: mailbox.orgId,
           lead,
           campaignId: outbound?.campaignId,
           subject: cand.subject,
           replyText: bodyText || null,
-          sentiment,
-          sentimentSummary,
+          sentiment: sentiment ?? keywordFallback?.sentiment ?? null,
+          sentimentSummary:
+            sentimentSummary ?? keywordFallback?.summary ?? null,
+          classifiedBy: classifiedBy ?? (keywordFallback ? "keyword" : null),
         });
+        if (alerted && inbound) {
+          await db
+            .update(messages)
+            .set({ replyAlertSentAt: new Date() })
+            .where(eq(messages.id, inbound.id));
+        }
         found++;
       }
     } finally {

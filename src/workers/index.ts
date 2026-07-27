@@ -12,6 +12,7 @@ import { QUEUE_NAMES, installRepeatableJobs, type SendStepJob } from "@/queues/q
 import { tickDueEnrollments, processEnrollmentStep } from "@/modules/campaigns/scheduler";
 import { runWarmupTick } from "@/modules/warmup/engine";
 import { syncReplies, runWarmupInboxBots } from "@/modules/warmup/imap";
+import { reclassifyReplies } from "@/modules/notifications/reclassify-replies";
 import { refreshAllDomainHealth } from "@/modules/spam/domain-refresh";
 import { logger } from "@/lib/logger";
 
@@ -60,7 +61,9 @@ function startWorkers() {
       QUEUE_NAMES.replySync,
       async () => {
         const res = await syncReplies();
-        logger.info("reply sync", res);
+        // Retry AI sentiment on replies stored unclassified, alerting late.
+        const swept = await reclassifyReplies();
+        logger.info("reply sync", { ...res, ...swept });
       },
       { connection }
     )

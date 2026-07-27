@@ -75,7 +75,7 @@ const jsonSchema = {
             body: {
               type: "string",
               description:
-                "Use spintax {a|b} for variation and merge fields like {{firstName}}, {{companyName}}. Must include an unsubscribe-friendly close.",
+                "Use spintax {a|b} for variation and merge fields like {{firstName}}, {{companyName}}. {{icebreaker}} renders as a one-line opener personalized per lead from enrichment data — start the FIRST email's body with it (after the greeting). Must include an unsubscribe-friendly close.",
             },
             variants: {
               type: "array",

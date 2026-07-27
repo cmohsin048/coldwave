@@ -73,6 +73,9 @@ export const messages = pgTable(
     // AI reply analysis (inbound only): tone + one-line gist of the reply.
     sentiment: replySentiment("sentiment"),
     sentimentSummary: text("sentiment_summary"),
+    // When a reply alert was handed to the system mailer (inbound only), so
+    // the reclassification sweep never alerts twice for the same reply.
+    replyAlertSentAt: timestamp("reply_alert_sent_at", { withTimezone: true }),
 
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
     sentAt: timestamp("sent_at", { withTimezone: true }),
